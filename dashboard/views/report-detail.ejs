@@ -1,0 +1,19 @@
+<%- include('partials/header') %>
+
+  <a class="back-link" href="/dashboard">&larr; Back to Reports Queue</a>
+
+  <h1>Report Detail</h1>
+  <p class="page-subtitle">Report <code><%= reportId %></code></p>
+
+  <% if (!report) { %>
+    <div class="empty-state">
+      <p><strong>No detail available yet</strong> — this view will populate once DASH-4 is built.</p>
+      <p>DASH-4 will show all 8 <code>triage_answers</code> (question text + answer),
+        the <code>risk_level</code>, and any <code>sms_alerts</code> timestamps for
+        this report here.</p>
+    </div>
+  <% } else { %>
+    <!-- DASH-4 will replace this whole branch with the real transcript view. -->
+  <% } %>
+
+<%- include('partials/footer') %>

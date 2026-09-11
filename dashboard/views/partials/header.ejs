@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= title %> · Vimbiso Dashboard</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-header__inner">
+      <p class="site-header__brand">Vimbiso <span>· Counsellor Dashboard</span></p>
+      <% if (typeof counsellor !== 'undefined' && counsellor) { %>
+        <nav class="site-nav" aria-label="Primary">
+          <a href="/dashboard" <%- activeNav === 'reports' ? 'aria-current="page"' : '' %>>Reports Queue</a>
+          <a href="/dashboard/pattern-watch" <%- activeNav === 'pattern-watch' ? 'aria-current="page"' : '' %>>Pattern Watch</a>
+        </nav>
+        <div class="site-header__user">
+          <span>Signed in as <%= counsellor.name %></span>
+          <form class="logout-form" method="POST" action="/logout">
+            <button type="submit">Log out</button>
+          </form>
+        </div>
+      <% } %>
+    </div>
+  </header>
+  <main>

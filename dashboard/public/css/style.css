@@ -1,0 +1,228 @@
+/* Vimbiso Dashboard — plain CSS, no framework.
+   Kept deliberately small; DASH-2/3/4 will extend this as real data lands. */
+
+:root {
+  --color-bg: #f7f7f5;
+  --color-surface: #ffffff;
+  --color-border: #d9d9d4;
+  --color-text: #1f2320;
+  --color-muted: #5b6058;
+  --color-primary: #1f5f4f;
+  --color-primary-contrast: #ffffff;
+  --color-high-risk-bg: #fdeceb;
+  --color-high-risk-border: #b3261e;
+  --color-high-risk-text: #7d1b16;
+  --focus-ring: 3px solid #1a73e8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--color-text);
+  background: var(--color-bg);
+  line-height: 1.5;
+}
+
+a {
+  color: var(--color-primary);
+}
+
+a:focus,
+button:focus,
+input:focus {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.site-header {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.75rem 1.25rem;
+}
+
+.site-header__inner {
+  max-width: 960px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.site-header__brand {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.site-header__brand span {
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.site-nav {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.site-nav a {
+  text-decoration: none;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  color: var(--color-text);
+}
+
+.site-nav a[aria-current="page"] {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+
+.site-header__user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  color: var(--color-muted);
+}
+
+.logout-form button {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin-bottom: 0.25rem;
+}
+
+.page-subtitle {
+  color: var(--color-muted);
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+}
+
+.empty-state {
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  color: var(--color-muted);
+}
+
+.empty-state p {
+  margin: 0 0 0.5rem;
+}
+
+.empty-state code {
+  background: var(--color-bg);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+.risk-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+
+.risk-badge--high {
+  background: var(--color-high-risk-bg);
+  color: var(--color-high-risk-text);
+  border: 1px solid var(--color-high-risk-border);
+}
+
+.risk-badge--standard {
+  background: #eef1ee;
+  color: var(--color-muted);
+  border: 1px solid var(--color-border);
+}
+
+.login-card {
+  max-width: 360px;
+  margin: 3rem auto 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 2rem;
+}
+
+.form-field {
+  margin-bottom: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.form-field label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.form-field input {
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 1rem;
+}
+
+.btn-primary {
+  width: 100%;
+  padding: 0.65rem 1rem;
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  opacity: 0.92;
+}
+
+.form-error {
+  background: var(--color-high-risk-bg);
+  color: var(--color-high-risk-text);
+  border: 1px solid var(--color-high-risk-border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.notice {
+  background: #fff8e6;
+  border: 1px solid #e6c766;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 1rem;
+  text-decoration: none;
+}

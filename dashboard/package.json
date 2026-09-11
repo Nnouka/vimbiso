@@ -1,0 +1,20 @@
+{
+  "name": "vimbiso-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vimbiso counsellor-facing web dashboard (Reports queue + Pattern Watch). Independent app from the root WhatsApp bot backend.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^4.19.2",
+    "ejs": "^3.1.10",
+    "express-session": "^1.18.0",
+    "bcrypt": "^5.1.1",
+    "pg": "^8.12.0",
+    "dotenv": "^16.4.5"
+  }
+}

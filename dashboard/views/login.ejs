@@ -1,0 +1,29 @@
+<%- include('partials/header') %>
+
+  <div class="login-card">
+    <h1>Counsellor log in</h1>
+    <p class="page-subtitle">Vimbiso report dashboard — internal use only.</p>
+
+    <% if (error) { %>
+      <p class="form-error" role="alert"><%= error %></p>
+    <% } %>
+
+    <!--
+      TODO(DASH-1): wire real auth against counsellor_users
+      (username lookup + bcrypt.compare against password_hash).
+      This form currently posts to a stub handler — see server.js.
+    -->
+    <form method="POST" action="/login" novalidate>
+      <div class="form-field">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" required />
+      </div>
+      <div class="form-field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required />
+      </div>
+      <button type="submit" class="btn-primary">Log in</button>
+    </form>
+  </div>
+
+<%- include('partials/footer') %>

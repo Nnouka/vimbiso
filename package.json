@@ -1,0 +1,26 @@
+{
+  "name": "vimbiso",
+  "version": "0.1.0",
+  "description": "Vimbiso - WhatsApp-first GBV risk-triage and safety-response tool (Kenya pilot)",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest",
+    "migrate": "node server/migrations/run.js",
+    "seed": "node server/seeds/content_en.js"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.12.0",
+    "twilio": "^5.2.2",
+    "bcrypt": "^5.1.1",
+    "dotenv": "^16.4.5",
+    "express-session": "^1.18.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "@playwright/test": "^1.47.0"
+  }
+}

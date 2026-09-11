@@ -1,0 +1,17 @@
+<%- include('partials/header') %>
+
+  <h1>Pattern Watch</h1>
+  <p class="page-subtitle">A non-urgent institutional signal — separate from the Reports Queue, never something a survivor waits on.</p>
+
+  <% if (!matches || matches.length === 0) { %>
+    <div class="empty-state">
+      <p><strong>No pattern matches yet</strong> — this view will populate once DASH-3 is built.</p>
+      <p>DASH-3 will list <code>pattern_matches</code> rows here: linked report ids,
+        when the match was found, and a "Mark reviewed" action. By design this tab
+        stays visually calm — no red flags, no urgent language.</p>
+    </div>
+  <% } else { %>
+    <!-- DASH-3 will replace this whole branch with the real match list. -->
+  <% } %>
+
+<%- include('partials/footer') %>

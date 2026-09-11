@@ -1,0 +1,17 @@
+<%- include('partials/header') %>
+
+  <h1>Reports Queue</h1>
+  <p class="page-subtitle">High-risk reports pinned first, flagged red, once real data is wired in.</p>
+
+  <% if (!reports || reports.length === 0) { %>
+    <div class="empty-state">
+      <p><strong>No reports yet</strong> — this view will populate once DASH-2 is built.</p>
+      <p>DASH-2 will render each report's id, timestamp, risk level, YES-answer summary,
+        region, and connect status here — HIGH-risk first (newest-first), visually
+        flagged red, then STANDARD. No real name is ever shown, per the data model.</p>
+    </div>
+  <% } else { %>
+    <!-- DASH-2 will replace this whole branch with the real queue table/list. -->
+  <% } %>
+
+<%- include('partials/footer') %>
