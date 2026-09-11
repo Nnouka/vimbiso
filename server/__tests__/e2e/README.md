@@ -10,13 +10,13 @@ real Playwright specs here yet; there is nothing for them to exercise.
 The team lead asked QA to set up the Playwright harness during Sprint 1, even
 though there's nothing to point it at, so that Sprint 2's QA work starts by writing
 tests on day one instead of first wiring up tooling. The config at the repo root
-(`playwright.config.js`) already points `testDir` at this folder.
+(`playwright.config.ts`) already points `testDir` at this folder.
 
 ## What lands here, and when
 
 Once DASH-1 (authenticated dashboard shell), DASH-2 (reports queue, High-Risk
 pinned), DASH-3 (Pattern Watch tab), and DASH-4 (report detail view) exist with a
-real, running `dashboard/` app, QA should add real `*.spec.js` files here covering
+real, running `dashboard/` app, QA should add real `*.spec.ts` files here covering
 at minimum:
 
 - DASH-1: login with valid/invalid `counsellor_users` credentials; unauthenticated
@@ -35,10 +35,10 @@ will not run. It shows the shape Sprint 2 specs should follow: seed data first (
 rely on a seed fixture), log in through the real login form, then assert on
 rendered output rather than on internal state.
 
-```js
-// server/__tests__/e2e/dashboard-queue.spec.js
+```ts
+// server/__tests__/e2e/dashboard-queue.spec.ts
 //
-// const { test, expect } = require('@playwright/test');
+// import { test, expect } from '@playwright/test';
 //
 // test.skip('a seeded HIGH-risk report is pinned at the top of the queue', async ({ page }) => {
 //   // Assumes a seed script has already loaded 2 HIGH-risk and 1 STANDARD report

@@ -8,6 +8,8 @@ parallel kickoff; where anything here and `backlog.md` ever appear to disagree,
 `backlog.md` wins — flag it, don't silently follow this doc instead. A clean,
 standalone extract of Section 2 lives at `docs/data-model.md`.
 
+**2026-09-11 update — TypeScript adopted.** Every `server/**/*.js` and `dashboard/**/*.js` file (and their test files) is being converted to `.ts`/`.tsx` equivalents with proper types. Any `.js` path named in this plan or in `backlog.md` should be read as its `.ts` equivalent. Build/run via `tsx` for dev and `tsc` for a compiled `dist/` build (see root `package.json`). Old `.js` files are being retired, not kept alongside their `.ts` replacements — delete the old file when its `.ts` replacement lands, don't leave both in the repo.
+
 ---
 
 ## 1. Sprint Goal & Definition of Done (plain language)

@@ -35,15 +35,24 @@ on day one instead of losing time on app setup. Right now:
 cd dashboard
 npm install
 cp .env.example .env   # optional for now — nothing reads it yet except PORT/SESSION_SECRET
-npm run dev            # or: npm start
+npm run dev            # runs server.ts directly via tsx, with watch/reload
 ```
 
 Runs on **http://localhost:3001** by default (override with `PORT` in
 `.env`) — a different port from the bot backend's `3000`, so both can run at
 the same time without colliding.
 
-`npm run dev` uses `node --watch` (no build step, no bundler — matches the
-"simpler, faster for a 10-day sprint" rationale above).
+`npm run dev` uses `tsx watch server.ts` — runs the TypeScript entry point
+directly, no manual build step needed for local dev. For a production-style
+run, compile first and run the emitted JS:
+
+```bash
+npm run build   # tsc -> dist/
+npm start       # node dist/server.js
+```
+
+`npm run typecheck` runs `tsc --noEmit` to check types without emitting
+anything — useful in CI or before opening a PR.
 
 ## Pages that exist right now
 
@@ -64,11 +73,11 @@ four unrelated stubs.
 
 - **DASH-1** — real login: check `counsellor_users` (bcrypt-hashed password),
   start a real session on success, error + no session on failure. See the
-  `TODO(DASH-1)` markers in `server.js` and `views/login.ejs`.
+  `TODO(DASH-1)` markers in `server.ts` and `views/login.ejs`.
 - **DASH-2** — real Reports Queue: HIGH-risk rows pinned first (newest-first
   within group, flagged red), then STANDARD; each row shows id, timestamp,
   risk_level, YES-answer summary, region, connect status — never a real name.
-  See the `TODO(DASH-2)` marker in `server.js` / `views/dashboard.ejs`.
+  See the `TODO(DASH-2)` marker in `server.ts` / `views/dashboard.ejs`.
 - **DASH-3** — real Pattern Watch tab: reads `pattern_matches`, shows linked
   `report_ids`, `created_at`, a "Mark reviewed" action — visually calm, no
   urgent language. See `TODO(DASH-3)`.
@@ -95,4 +104,4 @@ drift.
   (e.g. `connect-pg-simple`) when it wires actual auth.
 - `bcrypt` and `pg` are already in `package.json` as dependencies since
   DASH-1 will need them immediately — they are not yet `require()`'d
-  anywhere in `server.js`.
+  anywhere in `server.ts`.

@@ -2,13 +2,15 @@
   "name": "vimbiso",
   "version": "0.1.0",
   "description": "Vimbiso - WhatsApp-first GBV risk-triage and safety-response tool (Kenya pilot)",
-  "main": "server/index.js",
+  "main": "dist/index.js",
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node --watch server/index.js",
-    "test": "node --experimental-vm-modules node_modules/.bin/jest",
-    "migrate": "node server/migrations/run.js",
-    "seed": "node server/seeds/content_en.js"
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch server/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "migrate": "tsx server/migrations/run.ts",
+    "seed": "tsx server/seeds/content_en.ts"
   },
   "type": "commonjs",
   "dependencies": {
@@ -20,7 +22,21 @@
     "express-session": "^1.18.0"
   },
   "devDependencies": {
+    "typescript": "^5.5.4",
+    "tsx": "^4.19.0",
     "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "@types/jest": "^29.5.13",
+    "@types/node": "^20.14.15",
+    "@types/express": "^4.17.21",
+    "@types/express-session": "^1.18.0",
+    "@types/pg": "^8.11.10",
+    "@types/bcrypt": "^5.0.2",
     "@playwright/test": "^1.47.0"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testPathIgnorePatterns": ["/node_modules/", "/server/__tests__/e2e/"]
   }
 }
