@@ -12,29 +12,33 @@ Express+EJS over Next.js because it needs no build step, and the rest of the
 backend is already Express — one less stack for whoever picks up DASH-1..4
 next sprint to context-switch into.
 
-## Status: scaffold only, Sprint 1
+## Status: DASH-1..4 implemented, Sprint 2
 
-This is **not** a feature yet — there are no dashboard stories in Sprint 1.
-This exists so Sprint 2's DASH-1..4 stories can start building real features
-on day one instead of losing time on app setup. Right now:
+Real auth, real data, all wired to Postgres. Not yet run against a live
+database or Playwright in this dev environment (`npm install` is blocked
+here — see `docs/ai-tool-usage-log.md`); see `docs/backlog.md`'s DASH-1..4
+`Status:` lines for the precise state.
 
-- There is **no real authentication**. `/login` renders a form and `POST
-  /login` just starts a placeholder session and redirects — it does not check
-  `counsellor_users` or any password. Anyone who submits the form (or, right
-  now, anyone who just navigates to `/dashboard` directly) gets in.
-- There is **no real data**. The Reports Queue, Pattern Watch, and Report
-  Detail pages render genuine empty-state copy, not a mocked table — because
-  there is nothing behind them yet.
-- Every spot the next stories need to fill in is marked with a
-  `// TODO(DASH-n): ...` comment. Search for `TODO(DASH-` across this
-  directory to find all of them.
+- **Real authentication.** `POST /login` looks up `counsellor_users` by
+  `username`, `bcrypt.compare`s the password, and only starts a session on a
+  match. `/dashboard*` redirects to `/login` without a session.
+- **Real data.** Reports Queue, Pattern Watch, and Report Detail all query
+  Postgres directly via `dashboard/lib/db.ts` (this app's own connection
+  pool — see that file's header comment for why it's separate from
+  `server/lib/db.ts` rather than shared).
+- `npm run seed` creates/updates a demo counsellor login (`demo-counsellor` /
+  `demo-password` by default — override via `E2E_DEMO_USERNAME` /
+  `E2E_DEMO_PASSWORD`) so `server/__tests__/e2e/*.spec.ts` has something to
+  log in with; those specs document this as a fixture assumption they don't
+  create themselves.
 
 ## Install & run
 
 ```bash
 cd dashboard
 npm install
-cp .env.example .env   # optional for now — nothing reads it yet except PORT/SESSION_SECRET
+cp .env.example .env   # set DATABASE_URL to the same DB the bot backend uses
+npm run seed           # creates the demo counsellor login (see above)
 npm run dev            # runs server.ts directly via tsx, with watch/reload
 ```
 
@@ -58,35 +62,41 @@ anything — useful in CI or before opening a PR.
 
 | Route | What it does today |
 |---|---|
-| `GET /login` | Renders the login form. Not wired to real auth. |
-| `POST /login` | Stub — starts a placeholder session, redirects to `/dashboard`. |
+| `GET /login` | Renders the login form. |
+| `POST /login` | Real auth against `counsellor_users` (bcrypt); error + no session on failure. |
 | `POST /logout` | Destroys the session, redirects to `/login`. |
-| `GET /dashboard` | Reports Queue — empty-state placeholder. |
-| `GET /dashboard/pattern-watch` | Pattern Watch tab — empty-state placeholder. |
-| `GET /dashboard/reports/:id` | Report detail — empty-state placeholder. |
+| `GET /dashboard` | Reports Queue — scored reports, HIGH pinned first (newest-first within group). |
+| `GET /dashboard/pattern-watch` | Pattern Watch tab — real `pattern_matches` rows. |
+| `POST /dashboard/pattern-watch/:id/review` | Marks a pattern match `REVIEWED`. |
+| `GET /dashboard/reports/:id` | Report detail — triage transcript, risk level, SMS alert timestamps. |
 
-All four pages share one header/layout (`views/partials/header.ejs` +
-`views/partials/footer.ejs`) so they read as one coherent app already, not
-four unrelated stubs.
+All routes under `/dashboard*` require a session (redirect to `/login`
+otherwise). All pages share one header/layout (`views/partials/header.ejs` +
+`views/partials/footer.ejs`).
 
-## What Sprint 2 fills in (per `docs/backlog.md`'s DASH epic)
+## Notable implementation choices (DASH-1..4)
 
-- **DASH-1** — real login: check `counsellor_users` (bcrypt-hashed password),
-  start a real session on success, error + no session on failure. See the
-  `TODO(DASH-1)` markers in `server.ts` and `views/login.ejs`.
-- **DASH-2** — real Reports Queue: HIGH-risk rows pinned first (newest-first
-  within group, flagged red), then STANDARD; each row shows id, timestamp,
-  risk_level, YES-answer summary, region, connect status — never a real name.
-  See the `TODO(DASH-2)` marker in `server.ts` / `views/dashboard.ejs`.
-- **DASH-3** — real Pattern Watch tab: reads `pattern_matches`, shows linked
-  `report_ids`, `created_at`, a "Mark reviewed" action — visually calm, no
-  urgent language. See `TODO(DASH-3)`.
-- **DASH-4** — real report detail: all 8 `triage_answers` (question + answer),
-  `risk_level`, `sms_alerts` timestamps for one report. See `TODO(DASH-4)`.
+- **WhatsApp number masking.** The Reports Queue and Report Detail views show
+  `whatsapp_number` masked to its last 4 digits, never in full. SEC-2 doesn't
+  literally ban this column (unlike a legal-name column, which doesn't
+  exist), but a full phone number on a shared counsellor screen is the kind
+  of PII exposure this project treats carefully elsewhere (e.g. HR-2's SMS
+  body). See `maskPhoneNumber()` in `server.ts` for the full reasoning.
+- **YES-answer summary (DASH-2).** Shown as "N of 8" plus the list of
+  question keys that were YES (e.g. `STRANGLE, WEAPON`), not translated
+  question text — kept terse for a queue row; the full question text is
+  reserved for the detail view.
+- **Triage question text (DASH-4)** is a hardcoded English map in
+  `server.ts` (`TRIAGE_QUESTION_TEXT`), not a `content_strings` lookup — the
+  dashboard doesn't own the language pipeline (`server/lib/content.ts`) and
+  DASH-4's AC only asks for English. See the comment above that constant if
+  this ever needs to go multilingual.
+- **Demo login seed.** No other Sprint 2 story seeds a `counsellor_users`
+  row, so `dashboard/seed.ts` was added here — see `npm run seed` above.
 
-Data model these stories read from is `docs/data-model.md` (canonical:
+Data model these routes read from is `docs/data-model.md` (canonical:
 `docs/backlog.md` §2) — specifically `counsellor_users`, `reports`,
-`triage_answers`, and `pattern_matches`.
+`triage_answers`, `pattern_matches`, and `sms_alerts`.
 
 ## Copy / tone note
 
@@ -99,9 +109,14 @@ drift.
 
 ## Notes
 
-- Session store is the `express-session` in-memory default — fine for a
-  scaffold, not for anything real. DASH-1 should move this to a real store
-  (e.g. `connect-pg-simple`) when it wires actual auth.
-- `bcrypt` and `pg` are already in `package.json` as dependencies since
-  DASH-1 will need them immediately — they are not yet `require()`'d
-  anywhere in `server.ts`.
+- Session store is still the `express-session` in-memory default.
+  DASH-1's DoD only requires working login/logout plus the
+  redirect-when-unauthenticated behavior, both of which this satisfies at
+  hackathon PoC scale — but it means sessions don't survive a process
+  restart and won't work across multiple dashboard instances. Move to a real
+  store (e.g. `connect-pg-simple`) before that matters.
+- `npm install` could not be run in the environment this was built in (see
+  `docs/ai-tool-usage-log.md`), so none of this has been executed — only
+  read carefully against the migrations and QA's Playwright specs. Typecheck
+  and the four `server/__tests__/e2e/*.spec.ts` specs are the first things
+  to run once `npm install` works.

@@ -1,8 +1,19 @@
 // server/lib/conversation.ts
 //
-// Backend-owned. Implements INF-3 (state machine + language selector),
-// INF-4 (main menu), INF-5 (device-safety guidance), TRI-1 (8-question
-// triage flow) and TRI-3 (wire scoring into the flow).
+// Backend-owned. Sprint 1 implemented INF-3 (state machine + language
+// selector), INF-4 (main menu), INF-5 (device-safety guidance), TRI-1
+// (8-question triage flow) and TRI-3 (wire scoring into the flow) — all of
+// that is unchanged below. Sprint 2 EXTENDS this same state machine (per
+// sprint-2-plan.md §6: "extends conversation.ts with new branches, it does
+// not rewrite Sprint 1's flow") with: HR-1 (immediate safety-plan sequence
+// on HIGH), HR-2 (counsellor-connect + SMS alert logging), HR-3 (trusted-
+// contact registration, the main menu's 4th option), HR-4 (trusted-contact
+// alert), DIR-2 (region picker), DIR-3 (rights content), and PW-1 (consent-
+// gated perpetrator-naming prompt, calling into patternMatch.ts for PW-2).
+// Sprint 1's stub branches (which used to dead-end HIGH-risk reports at the
+// bridge message and stub out "Find help"/"Know your rights") are gone now
+// that the real Sprint 2 stories exist — see the comments at each replaced
+// call site for exactly what changed.
 //
 // This is the ONLY thing server/routes/webhook.ts (Networking-owned) calls.
 // Per docs/sprint-1-plan.md §3.3, all conversation/session state lives in
@@ -19,6 +30,9 @@ import { sendText, sendButtons, sendList, QuickReplyButton, ListSection } from '
 import { t } from './content';
 import { query } from './db';
 import { scoreRisk, Answer, TriageAnswers } from './riskScoring';
+import { normalizeAndHash } from './hashing';
+import { recordAndCheckPattern } from './patternMatch';
+import { alertOnCallCounsellor } from './sms';
 
 // ---------------------------------------------------------------------------
 // Shapes handed off from server/routes/webhook.ts and stored in Postgres
@@ -129,6 +143,41 @@ const TRIAGE_ANSWER_BY_BUTTON_ID: Record<string, Answer> = {
 const TRIAGE_STEP_PREFIX = 'TRIAGE_';
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // INF-3: 24h inactivity session reset
 
+// Sprint 2 conversation_state.current_step values (INF-3's state machine
+// pattern extended, not replaced — see file header). Kept as plain string
+// literals, matching this file's existing style for 'MAIN_MENU' /
+// 'AWAITING_LANGUAGE' above, rather than introducing named constants only
+// for the new steps.
+//   AWAITING_TRUSTED_CONTACT_NUMBER — HR-3, expects free-text phone number
+//   AWAITING_CONNECT_RESPONSE       — HR-1/HR-2, expects connect_yes/connect_no
+//   AWAITING_REGION                 — DIR-2, expects a region_* row tap
+//   AWAITING_PW_CONSENT             — PW-1, expects pw_consent_yes/pw_consent_no
+//   AWAITING_PW_IDENTIFIER          — PW-1, expects free-text identifier
+
+// --- DEVIATION FLAGGED PER CONTRIBUTING.md ("flag it, don't silently
+// absorb") -------------------------------------------------------------
+// sprint-2-plan.md §4's content-key list gives body-text keys for the HR-1
+// connect prompt and PW-1 consent prompt (`highrisk.connect_prompt` /
+// `pw.consent_prompt`) but — unlike TRI-1's per-question buttons, which each
+// have their own `triage.<q>.btn_yes/btn_no/btn_skip` keys — never lists a
+// content key for either prompt's own Yes/No BUTTON LABELS (conversation-
+// design.md §8.4/§12's tables show the literal button text "Yes"/"No" in a
+// "Button label" column, same as §5's triage table does, but §14's actual
+// content-key table only carries the prompt/ack keys, not button-label
+// keys). Same gap exists for DIR-2's region-picker list-button text ("Choose
+// an area") and its list section title — §10 shows the literal text but
+// §14 has no key for either. Rather than hardcode these four short UI-chrome
+// strings in this file (which would silently reopen LANG-1's "zero
+// hardcoded user-facing strings" DoD gap) or invent an unlisted key without
+// saying so, four small new keys are added here, seeded in content_en.ts,
+// and flagged loudly in this comment and in the PR/report per this
+// deviation-flagging rule: `common.btn_yes`, `common.btn_no`,
+// `dir.region_button`, `dir.region_section_title`. If Designer would rather
+// name these differently, that's a trivial content-only follow-up — nothing
+// else depends on the key names themselves.
+const BTN_YES = 'common.btn_yes';
+const BTN_NO = 'common.btn_no';
+
 // ---------------------------------------------------------------------------
 // conversation_state persistence helpers
 // ---------------------------------------------------------------------------
@@ -224,6 +273,10 @@ async function sendMainMenu(to: string, language: string): Promise<void> {
   // equivalent (the hint is still delivered, in the same message, before any
   // menu selection), just visually a plain line rather than styled gray
   // footer text.
+  // Sprint 2 (sprint-2-plan.md §3.3): a 4th row is additive here — the
+  // existing 3 options/keys/routing are unchanged. menu.body's STORED VALUE
+  // gains a 4th line (seeded in content_en.ts) even though its key name
+  // doesn't change; see conversation-design.md §13.
   const body = `${t('menu.body', language)}\n\n${t('menu.footer_hint', language)}`;
   const sections: ListSection[] = [
     {
@@ -232,6 +285,7 @@ async function sendMainMenu(to: string, language: string): Promise<void> {
         { id: 'menu_report', title: t('menu.report_row', language) },
         { id: 'menu_find_help', title: t('menu.find_help_row', language) },
         { id: 'menu_rights', title: t('menu.rights_row', language) },
+        { id: 'menu_trusted_contact', title: t('menu.trusted_contact_row', language) },
       ],
     },
   ];
@@ -247,6 +301,237 @@ async function sendQuestion(to: string, language: string, questionKey: string): 
     { id: 'triage_skip', title: t(`${prefix}.btn_skip`, language) },
   ];
   await sendButtons(to, body, buttons);
+}
+
+// ---------------------------------------------------------------------------
+// DIR-1 support: resources lookups (DIR-1's own seed lives in
+// server/seeds/resources_kenya.ts — this file only ever reads that table, per
+// HR-1/DIR-2's technical notes: "hotline number queried from resources... at
+// send time, never hardcoded").
+// ---------------------------------------------------------------------------
+
+/** The subset of `resources` columns HR-1/DIR-2 actually render. */
+interface ResourceRow {
+  name: string | null;
+  phone: string | null;
+  source_name: string | null;
+  last_verified_date: Date | string | null;
+}
+
+async function fetchNationalHotlineResource(): Promise<ResourceRow | null> {
+  const { rows } = await query<ResourceRow>(
+    `SELECT name, phone, source_name, last_verified_date
+     FROM resources
+     WHERE country = 'KE' AND category = 'hotline'
+     ORDER BY id
+     LIMIT 1`
+  );
+  return rows[0] || null;
+}
+
+async function fetchRegionResource(region: string): Promise<ResourceRow | null> {
+  const { rows } = await query<ResourceRow>(
+    `SELECT name, phone, source_name, last_verified_date
+     FROM resources
+     WHERE country = 'KE' AND region = $1
+     ORDER BY id
+     LIMIT 1`,
+    [region]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Renders `last_verified_date` as `12 Sep 2026` (conversation-design.md
+ * §10.1: "should render as... a human-readable form... not a raw ISO
+ * timestamp"), not a new content key — a formatting detail, per that section.
+ */
+function formatVerifiedDate(value: Date | string | null): string {
+  if (!value) return 'unknown date';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return 'unknown date';
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+// ---------------------------------------------------------------------------
+// HR-1: immediate safety-plan sequence (fires automatically on risk_level=HIGH,
+// continuing the SAME handling cycle as the 8th triage answer — see
+// finishTriage() below; per conversation-design.md §8, no pause is inserted
+// between highrisk.bridge, already sent by finishTriage, and this sequence).
+// ---------------------------------------------------------------------------
+
+async function sendHighRiskSafetyPlan(to: string, language: string): Promise<void> {
+  await sendText(to, t('highrisk.intro', language));
+
+  // conversation-design.md §8.2: one message, all 4 items, fixed numbered
+  // order — not 4 separate sends.
+  const planLines = [1, 2, 3, 4].map((n) => `${n}. ${t(`highrisk.plan_${n}`, language)}`);
+  await sendText(to, planLines.join('\n'));
+
+  // §8.3: hotline number queried live, never hardcoded. If the resources
+  // table has no hotline row yet (DIR-1 seed not run / DB issue), log loudly
+  // and skip this one message rather than guess a number — DIR-1's sourcing
+  // guarantee must hold even in this failure mode, per the design doc's
+  // explicit instruction.
+  const hotline = await fetchNationalHotlineResource();
+  if (!hotline || !hotline.phone) {
+    console.error(
+      'conversation.ts: HR-1 found no resources row for category=hotline, country=KE — ' +
+        'has server/seeds/resources_kenya.ts been run? Skipping the hotline message ' +
+        '(never falling back to a guessed number, per DIR-1).'
+    );
+  } else {
+    const prefixTemplate = t('highrisk.hotline_prefix', language);
+    await sendText(to, prefixTemplate.replace('{{hotline_number}}', hotline.phone));
+  }
+}
+
+async function sendConnectPrompt(to: string, language: string): Promise<void> {
+  await sendButtons(to, t('highrisk.connect_prompt', language), [
+    { id: 'connect_yes', title: t(BTN_YES, language) },
+    { id: 'connect_no', title: t(BTN_NO, language) },
+  ]);
+}
+
+/**
+ * HR-4: sends the fixed, verbatim check-in message to a survivor's registered
+ * trusted contact, if one exists — silently no-ops otherwise (backlog.md
+ * HR-4 AC). Never throws out of the caller's flow: a failed contact alert
+ * must not prevent the rest of HR-1's sequence (connect ack, PW-1 prompt)
+ * from reaching the survivor.
+ */
+async function maybeAlertTrustedContact(survivorWhatsappNumber: string): Promise<void> {
+  let contact: { id: number; contact_whatsapp_number: string } | undefined;
+  try {
+    const { rows } = await query<{ id: number; contact_whatsapp_number: string }>(
+      'SELECT id, contact_whatsapp_number FROM trusted_contacts WHERE survivor_whatsapp_number = $1',
+      [survivorWhatsappNumber]
+    );
+    contact = rows[0];
+  } catch (err) {
+    console.error('conversation.ts: HR-4 trusted_contacts lookup failed:', err);
+    return;
+  }
+
+  if (!contact) {
+    return; // HR-4 AC: no contact registered -> silent no-op, no message to anyone.
+  }
+
+  try {
+    // trusted_contact.alert_message is intentionally NOT translated (fixed
+    // verbatim per HR-4's AC and conversation-design.md §9.4/§15 — Designer
+    // explicitly did not draft translated variants for Sprint 2), so this is
+    // always looked up in English regardless of the survivor's own language.
+    await sendText(contact.contact_whatsapp_number, t('trusted_contact.alert_message', 'en'));
+    await query('UPDATE trusted_contacts SET alert_sent_at = now() WHERE id = $1', [contact.id]);
+  } catch (err) {
+    console.error(
+      `conversation.ts: HR-4 failed to alert trusted contact for survivor ${survivorWhatsappNumber}:`,
+      err
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DIR-2: "Find Help" region picker (reachable from the main menu directly, or
+// automatically after a STANDARD-risk outcome — same picker, distinguished
+// by whether temp_answers.report_id is set; see handleRegionSelection()).
+// ---------------------------------------------------------------------------
+
+async function sendRegionPicker(to: string, language: string): Promise<void> {
+  const sections: ListSection[] = [
+    {
+      title: t('dir.region_section_title', language),
+      rows: [
+        { id: 'region_nairobi', title: t('dir.region_nairobi', language) },
+        { id: 'region_mombasa', title: t('dir.region_mombasa', language) },
+        { id: 'region_other', title: t('dir.region_other', language) },
+      ],
+    },
+  ];
+  await sendList(to, t('dir.region_prompt', language), sections, t('dir.region_button', language));
+}
+
+const REGION_NAME_BY_ROW_ID: Record<string, string> = {
+  region_nairobi: 'Nairobi',
+  region_mombasa: 'Mombasa',
+  // 'region_other' has no specific region row in `resources` by design (DIR-2's
+  // AC: "Other-National" always resolves to the national hotline fallback).
+};
+
+/**
+ * Resolves a region row tap to a real `resources` entry and sends DIR-2's
+ * exact 3-line result format. Falls back to the national hotline if there's
+ * no region-specific match (DIR-2 AC) — including for `region_other`, which
+ * has no region-specific row by design.
+ */
+async function sendRegionResult(to: string, language: string, regionRowId: string): Promise<void> {
+  const regionName = REGION_NAME_BY_ROW_ID[regionRowId];
+  let resource: ResourceRow | null = regionName ? await fetchRegionResource(regionName) : null;
+
+  if (!resource) {
+    resource = await fetchNationalHotlineResource();
+  }
+
+  if (!resource || !resource.name || !resource.phone) {
+    // Should not happen once DIR-1's seed has run (it seeds >=1 Nairobi
+    // resource and the national hotline) — logged loudly rather than
+    // sending any hardcoded/guessed resource text, per DIR-1's sourcing
+    // guarantee.
+    console.error(
+      `conversation.ts: DIR-2 found no usable resources row for region="${regionName || regionRowId}" ` +
+        `or the national hotline fallback — has server/seeds/resources_kenya.ts been run?`
+    );
+    return;
+  }
+
+  const template = t('dir.result_format', language);
+  const body = template
+    .replace('{name}', resource.name)
+    .replace('{phone}', resource.phone)
+    .replace('{source_name}', resource.source_name || 'unknown source')
+    .replace('{date}', formatVerifiedDate(resource.last_verified_date));
+  await sendText(to, body);
+}
+
+// ---------------------------------------------------------------------------
+// DIR-3: "Know your rights" example content
+// ---------------------------------------------------------------------------
+
+async function sendRightsContent(to: string, language: string): Promise<void> {
+  // conversation-design.md §11: disclaimer first, then the points, ALL in one
+  // message, so the disclaimer can never be scrolled past or truncated away
+  // from the content it qualifies.
+  const body = [
+    t('rights.disclaimer', language),
+    '',
+    `1. ${t('rights.point_1', language)}`,
+    `2. ${t('rights.point_2', language)}`,
+    `3. ${t('rights.point_3', language)}`,
+  ].join('\n');
+  await sendText(to, body);
+}
+
+// ---------------------------------------------------------------------------
+// PW-1: optional consent-gated perpetrator-naming prompt (fires once HR-1's
+// sequence or DIR-2's picker completes for a scored report — see
+// runHighRiskSequence()/handleRegionSelection() below).
+// ---------------------------------------------------------------------------
+
+async function sendPwConsentPrompt(to: string, language: string): Promise<void> {
+  await sendButtons(to, t('pw.consent_prompt', language), [
+    { id: 'pw_consent_yes', title: t(BTN_YES, language) },
+    { id: 'pw_consent_no', title: t(BTN_NO, language) },
+  ]);
+}
+
+async function advanceToPwConsent(
+  to: string,
+  language: string,
+  reportId: number
+): Promise<ConversationStatePatch> {
+  await sendPwConsentPrompt(to, language);
+  return { current_step: 'AWAITING_PW_CONSENT', temp_answers: { report_id: reportId } };
 }
 
 // ---------------------------------------------------------------------------
@@ -299,15 +584,47 @@ async function finishTriage(
   const bridgeKey = riskLevel === 'HIGH' ? 'highrisk.bridge' : 'standard.bridge';
   await sendText(from, t(bridgeKey, language));
 
-  // --- Sprint 1 scope boundary (not a bug) --------------------------------
-  // Per docs/conversation-design.md §6: both bridge messages above are the
-  // deliberate END of the visible Sprint 1 flow. HR-1's full safety-plan
-  // sequence (danger-intro/plan list/hotline/connect-prompt, for HIGH) and
-  // DIR-2's region-picker handoff (for STANDARD) are Sprint 2 stories that
-  // don't exist yet. For a HIGH-risk report specifically, this means the
-  // conversation genuinely stops here for now — that is intentional per the
-  // design doc, not a missing feature in this file.
-  return { current_step: 'MAIN_MENU', temp_answers: {} };
+  // --- Sprint 2: HR-1 (HIGH) / DIR-2 (STANDARD) continue in the SAME
+  // handling cycle as the 8th triage answer, per conversation-design.md §8
+  // ("no pause, no 'are you ready?' gate between highrisk.bridge and this
+  // sequence") and §10 (DIR-2 "automatically offered as the next step after
+  // a STANDARD-risk outcome"). This replaces Sprint 1's stub, which
+  // deliberately ended the visible conversation at the bridge message above
+  // — that stub is gone now that HR-1/DIR-1/DIR-2 exist.
+  if (riskLevel === 'HIGH') {
+    return runHighRiskSequence(from, language, reportId);
+  }
+  return runStandardRiskSequence(from, language, reportId);
+}
+
+/**
+ * HR-1's full safety-plan sequence, in order: danger-intro, 4-item plan,
+ * hotline number, Yes/No connect prompt. Ends by awaiting the connect tap
+ * (handleConnectResponse), which itself chains into HR-2/HR-4 and then PW-1.
+ */
+async function runHighRiskSequence(
+  from: string,
+  language: string,
+  reportId: number
+): Promise<ConversationStatePatch> {
+  await sendHighRiskSafetyPlan(from, language);
+  await sendConnectPrompt(from, language);
+  return { current_step: 'AWAITING_CONNECT_RESPONSE', temp_answers: { report_id: reportId } };
+}
+
+/**
+ * DIR-2's region picker, offered automatically as the STANDARD-risk report's
+ * next step. temp_answers.report_id is kept through the region selection so
+ * handleRegionSelection() knows to chain into PW-1 afterward (vs. a
+ * menu-triggered DIR-2 lookup, which has no report to consent for).
+ */
+async function runStandardRiskSequence(
+  from: string,
+  language: string,
+  reportId: number
+): Promise<ConversationStatePatch> {
+  await sendRegionPicker(from, language);
+  return { current_step: 'AWAITING_REGION', temp_answers: { report_id: reportId } };
 }
 
 async function handleTriageAnswer(
@@ -389,6 +706,287 @@ async function handleTriageAnswer(
 }
 
 // ---------------------------------------------------------------------------
+// HR-2: counsellor-connect response (Yes/No, after HR-1's connect prompt)
+// ---------------------------------------------------------------------------
+
+async function handleConnectResponse(
+  from: string,
+  state: ConversationStateRow,
+  buttonId: string | null
+): Promise<ConversationStatePatch> {
+  const language = state.language || 'en';
+  const reportId = state.temp_answers?.report_id;
+
+  if (!reportId) {
+    // Defensive: mirrors handleTriageAnswer's "lost report_id" recovery below.
+    console.error(
+      `conversation.ts: AWAITING_CONNECT_RESPONSE state for ${from} has no report_id in ` +
+        `temp_answers; resetting to MAIN_MENU.`
+    );
+    await sendMainMenu(from, language);
+    return { current_step: 'MAIN_MENU', temp_answers: {} };
+  }
+
+  if (buttonId !== 'connect_yes' && buttonId !== 'connect_no') {
+    // Typed text or an unrecognized tap — re-ask, same pattern as
+    // handleTriageAnswer's unrecognized-answer branch.
+    await sendConnectPrompt(from, language);
+    return {};
+  }
+
+  if (buttonId === 'connect_yes') {
+    // HR-2 AC: wants_counsellor_connect=true, connect_requested_at set, a
+    // sms_alerts row written, and a real Twilio SMS sent via
+    // alertOnCallCounsellor() — never hand-formatted here (sprint-2-plan.md
+    // §3.2: "it does not hand-format the SMS body itself").
+    await query(
+      `UPDATE reports SET wants_counsellor_connect = true, connect_requested_at = now() WHERE id = $1`,
+      [reportId]
+    );
+
+    const sentTo = process.env.ONCALL_COUNSELLOR_PHONE || null;
+    try {
+      const { sid } = await alertOnCallCounsellor(reportId, 'HIGH');
+      await query(
+        `INSERT INTO sms_alerts (report_id, sent_to, sent_at, twilio_sid, status)
+         VALUES ($1, $2, now(), $3, 'sent')`,
+        [reportId, sentTo, sid]
+      );
+    } catch (err) {
+      // A failed SMS send must still be visible in sms_alerts (so a
+      // counsellor auditing the queue can see the alert didn't go out) and
+      // must not prevent the survivor from getting her ack message below.
+      console.error(`conversation.ts: alertOnCallCounsellor failed for report ${reportId}:`, err);
+      await query(
+        `INSERT INTO sms_alerts (report_id, sent_to, sent_at, twilio_sid, status)
+         VALUES ($1, $2, now(), NULL, 'failed')`,
+        [reportId, sentTo]
+      );
+    }
+
+    await sendText(from, t('highrisk.connect_yes_ack', language));
+  } else {
+    // HR-2 AC: "No" tapped -> no SMS fires, hotline stays visible above (it
+    // was already sent as part of HR-1's sequence — nothing more to do here).
+    await sendText(from, t('highrisk.connect_no_ack', language));
+  }
+
+  // HR-4: fires (or silently no-ops) regardless of the Yes/No answer above —
+  // it's gated on trusted-contact registration, not on the connect decision.
+  await maybeAlertTrustedContact(from);
+
+  // PW-1: fires once HR-1's whole sequence (including the connect ack and any
+  // trusted-contact alert) has completed, per conversation-design.md §12's
+  // trigger condition.
+  return advanceToPwConsent(from, language, reportId);
+}
+
+// ---------------------------------------------------------------------------
+// DIR-2: region selection response
+// ---------------------------------------------------------------------------
+
+const VALID_REGION_ROW_IDS = new Set(['region_nairobi', 'region_mombasa', 'region_other']);
+
+async function handleRegionSelection(
+  from: string,
+  state: ConversationStateRow,
+  buttonId: string | null
+): Promise<ConversationStatePatch> {
+  const language = state.language || 'en';
+
+  if (!buttonId || !VALID_REGION_ROW_IDS.has(buttonId)) {
+    // Typed text or an unrecognized tap — re-ask, same pattern used throughout
+    // this file.
+    await sendRegionPicker(from, language);
+    return {};
+  }
+
+  const reportId = state.temp_answers?.report_id;
+
+  // Persist the chosen region on the report row when this picker was reached
+  // via a scored report's own closing flow (not the standalone main-menu
+  // "Find help near me" lookup, which has no report to attach a region to).
+  // Not required by any single Sprint 2 AC in isolation, but `reports.region`
+  // exists in the schema (backlog.md Section 2) specifically for this, and
+  // DASH-2's queue view renders it per report.
+  if (reportId) {
+    const regionName = REGION_NAME_BY_ROW_ID[buttonId] || 'Other/National';
+    await query('UPDATE reports SET region = $1 WHERE id = $2', [regionName, reportId]);
+  }
+
+  await sendRegionResult(from, language, buttonId);
+
+  if (reportId) {
+    // Reached via a scored STANDARD report's closing flow — chain into PW-1,
+    // per conversation-design.md §12's trigger condition ("...or DIR-2's
+    // picker completes").
+    return advanceToPwConsent(from, language, reportId);
+  }
+
+  // Reached directly from the main menu ("Find help near me") — no report to
+  // consent for, so PW-1 does not apply here.
+  return { current_step: 'MAIN_MENU', temp_answers: {} };
+}
+
+// ---------------------------------------------------------------------------
+// PW-1: consent response, then the free-text identifier
+// ---------------------------------------------------------------------------
+
+async function handlePwConsentResponse(
+  from: string,
+  state: ConversationStateRow,
+  buttonId: string | null
+): Promise<ConversationStatePatch> {
+  const language = state.language || 'en';
+  const reportId = state.temp_answers?.report_id;
+
+  if (!reportId) {
+    console.error(
+      `conversation.ts: AWAITING_PW_CONSENT state for ${from} has no report_id in temp_answers; ` +
+        `resetting to MAIN_MENU.`
+    );
+    return { current_step: 'MAIN_MENU', temp_answers: {} };
+  }
+
+  if (buttonId !== 'pw_consent_yes' && buttonId !== 'pw_consent_no') {
+    await sendPwConsentPrompt(from, language);
+    return {};
+  }
+
+  if (buttonId === 'pw_consent_no') {
+    // PW-1 AC: "no"/skip ends the flow — no perpetrator_hashes row, and
+    // (per SEC-2) perpetrator_consent_given is never touched on this path.
+    await sendText(from, t('pw.consent_no_ack', language));
+    return { current_step: 'MAIN_MENU', temp_answers: {} };
+  }
+
+  // 'pw_consent_yes': conversation-design.md §12.1 — the ack message itself
+  // is what asks the survivor to type the identifying text (the PM-approved
+  // fold of both into pw.consent_yes_ack; see the file header / task notes —
+  // sprint-2-plan.md §4 lists no separate "ask for text" key).
+  await sendText(from, t('pw.consent_yes_ack', language));
+  return { current_step: 'AWAITING_PW_IDENTIFIER', temp_answers: { report_id: reportId } };
+}
+
+async function handlePwIdentifier(
+  from: string,
+  state: ConversationStateRow,
+  body: string | null
+): Promise<ConversationStatePatch> {
+  const language = state.language || 'en';
+  const reportId = state.temp_answers?.report_id;
+
+  if (!reportId) {
+    console.error(
+      `conversation.ts: AWAITING_PW_IDENTIFIER state for ${from} has no report_id in temp_answers; ` +
+        `resetting to MAIN_MENU.`
+    );
+    return { current_step: 'MAIN_MENU', temp_answers: {} };
+  }
+
+  if (typeof body !== 'string' || !body.trim()) {
+    // A button tap or empty message where free text was expected — re-prompt
+    // once rather than silently treating a non-answer as either a skip or a
+    // (nonexistent) identifier. Not explicitly covered by conversation-design.md
+    // (the doc assumes the next message IS the identifier), but consistent
+    // with this file's "don't silently guess" posture elsewhere.
+    await sendText(from, t('pw.consent_yes_ack', language));
+    return {};
+  }
+
+  // --- SEC-2 / SEC-1, safety-critical: read before touching this block ---
+  // perpetrator_consent_given is set true HERE and ONLY here, in this one
+  // code path, strictly gated behind the survivor's explicit "Yes" tap
+  // handled in handlePwConsentResponse above — never anywhere else in this
+  // file. It is set BEFORE the hash is written (not after), so a crash
+  // between these two statements fails toward "consent recorded, no hash
+  // row" rather than the reverse, which SEC-2's AC treats as the safe
+  // direction ("perpetrator_consent_given is false/null" is the condition
+  // that must gate hash writes, so it must never be false while a hash row
+  // for this report already exists).
+  await query(`UPDATE reports SET perpetrator_consent_given = true WHERE id = $1`, [reportId]);
+
+  try {
+    // normalizeAndHash (SEC-1) — raw text is NEVER passed to `query()` or
+    // persisted anywhere; only its HMAC-SHA256 digest is. It throws on
+    // punctuation-only/empty-after-normalize input or a missing
+    // PERPETRATOR_HASH_SECRET — caught below so a bad/edge-case identifier
+    // ends the flow cleanly instead of crashing the conversation. Per SEC-2,
+    // no perpetrator_hashes row is written in that case either way.
+    const hashValue = normalizeAndHash(body);
+    await query(
+      `INSERT INTO perpetrator_hashes (report_id, hash_value, algorithm) VALUES ($1, $2, 'HMAC-SHA256')`,
+      [reportId, hashValue]
+    );
+    // PW-2: non-urgent, consent-gated cross-report matching — never blocks or
+    // alters anything about the survivor's own case either way.
+    await recordAndCheckPattern(reportId, hashValue);
+  } catch (err) {
+    console.error(`conversation.ts: PW-1 hashing/pattern-check failed for report ${reportId}:`, err);
+  }
+
+  return { current_step: 'MAIN_MENU', temp_answers: {} };
+}
+
+// ---------------------------------------------------------------------------
+// HR-3: trusted-contact registration
+// ---------------------------------------------------------------------------
+
+/**
+ * Loose validation per HR-3's technical note ("validate loosely — e.g.
+ * starts with + and is mostly digits"): not full E.164/libphonenumber
+ * validation, just enough to catch an obviously-incomplete paste and match
+ * conversation-design.md §9.1's own example shape (+2547XXXXXXXX).
+ */
+function isPlausibleWhatsappNumber(text: string): boolean {
+  return /^\+[0-9]{7,15}$/.test(text.trim());
+}
+
+async function handleTrustedContactNumber(
+  from: string,
+  state: ConversationStateRow,
+  body: string | null
+): Promise<ConversationStatePatch> {
+  const language = state.language || 'en';
+
+  if (typeof body !== 'string' || !isPlausibleWhatsappNumber(body)) {
+    await sendText(from, t('trusted_contact.invalid_number', language));
+    return {}; // stay on this step for a retry
+  }
+
+  const contactNumber = body.trim();
+
+  // HR-3 AC: keyed to survivor_whatsapp_number, not report_id, so it persists
+  // across future reports. "You can change this contact anytime by coming
+  // back to this menu" (conversation-design.md §9.1) means a second
+  // registration REPLACES the first rather than accumulating rows — so this
+  // upserts by survivor number rather than always inserting.
+  const { rows } = await query<{ id: number }>(
+    'SELECT id FROM trusted_contacts WHERE survivor_whatsapp_number = $1',
+    [from]
+  );
+
+  if (rows.length > 0) {
+    // Changing the contact resets alert_sent_at: an alert already sent to the
+    // OLD contact number should not make the NEW contact look already-alerted.
+    await query(
+      `UPDATE trusted_contacts
+       SET contact_whatsapp_number = $1, registered_at = now(), alert_sent_at = NULL
+       WHERE id = $2`,
+      [contactNumber, rows[0].id]
+    );
+  } else {
+    await query(
+      `INSERT INTO trusted_contacts (survivor_whatsapp_number, contact_whatsapp_number) VALUES ($1, $2)`,
+      [from, contactNumber]
+    );
+  }
+
+  await sendText(from, t('trusted_contact.confirm', language));
+  return { current_step: 'MAIN_MENU', temp_answers: {} };
+}
+
+// ---------------------------------------------------------------------------
 // INF-5: device-safety guidance
 // ---------------------------------------------------------------------------
 
@@ -413,13 +1011,27 @@ async function handleMainMenu(
     return startTriage(from, language);
   }
 
-  if (buttonId === 'menu_find_help' || buttonId === 'menu_rights') {
-    // Sprint 1 stub (known gap, not silently dropped): DIR-2 ("Find help near
-    // me") and DIR-3 ("Know your rights") don't exist yet this sprint. Per
-    // the task brief, send a clear placeholder rather than erroring or
-    // hanging, and stay at the main menu so the conversation doesn't dead-end.
-    await sendText(from, t('stub.coming_soon', language));
+  if (buttonId === 'menu_find_help') {
+    // DIR-2, menu-triggered entry point (the other entry point is automatic,
+    // after a STANDARD-risk report — see runStandardRiskSequence()). No
+    // report_id in temp_answers here, so handleRegionSelection() knows not to
+    // chain into PW-1 afterward.
+    await sendRegionPicker(from, language);
+    return { current_step: 'AWAITING_REGION', temp_answers: {} };
+  }
+
+  if (buttonId === 'menu_rights') {
+    // DIR-3 — Sprint 1's stub is gone now that this content exists.
+    await sendRightsContent(from, language);
     return {};
+  }
+
+  if (buttonId === 'menu_trusted_contact') {
+    // HR-3 registration entry point (sprint-2-plan.md §3.3's 4th main-menu
+    // option) — not tied to any report, per HR-3's technical note.
+    await sendText(from, t('trusted_contact.prompt', language));
+    await sendText(from, t('trusted_contact.ask_number', language));
+    return { current_step: 'AWAITING_TRUSTED_CONTACT_NUMBER' };
   }
 
   // Typed text or an unrecognized tap at the main menu — re-send it.
@@ -498,6 +1110,21 @@ export async function handleIncomingMessage(msg: NormalizedMessage): Promise<voi
     patch = await handleMainMenu(from, state, buttonId);
   } else if (state.current_step && state.current_step.startsWith(TRIAGE_STEP_PREFIX)) {
     patch = await handleTriageAnswer(from, state, buttonId);
+  } else if (state.current_step === 'AWAITING_TRUSTED_CONTACT_NUMBER') {
+    // HR-3
+    patch = await handleTrustedContactNumber(from, state, body);
+  } else if (state.current_step === 'AWAITING_CONNECT_RESPONSE') {
+    // HR-1/HR-2/HR-4
+    patch = await handleConnectResponse(from, state, buttonId);
+  } else if (state.current_step === 'AWAITING_REGION') {
+    // DIR-2
+    patch = await handleRegionSelection(from, state, buttonId);
+  } else if (state.current_step === 'AWAITING_PW_CONSENT') {
+    // PW-1 (consent tap)
+    patch = await handlePwConsentResponse(from, state, buttonId);
+  } else if (state.current_step === 'AWAITING_PW_IDENTIFIER') {
+    // PW-1 (free-text identifier)
+    patch = await handlePwIdentifier(from, state, body);
   } else {
     // Unknown/corrupt current_step — recover to the main menu instead of
     // dead-ending silently.

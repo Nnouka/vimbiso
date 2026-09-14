@@ -1,59 +1,40 @@
 # Dashboard E2E Tests (Playwright)
 
-This folder is scaffolding, not a suite. Sprint 1 has no browser UI to test — the
-counsellor dashboard (`dashboard/**`) doesn't exist as a working app with real data
-until Sprint 2's DASH-1 through DASH-4 stories land (`docs/backlog.md`). Do not add
-real Playwright specs here yet; there is nothing for them to exercise.
+Real specs now live in this folder, written test-first per QA's Sprint 2 role
+(`docs/sprint-2-plan.md` §2 Ownership Map / §5 Wave 1), against a `dashboard/`
+app that is still a Sprint 1 scaffold (DASH-1..4 are not implemented yet — see
+`docs/backlog.md`). **Every spec here is expected to fail until DASH-1 through
+DASH-4 land** — that failure is correct and expected right now, not a bug in
+these files. This mirrors how `patternMatch.test.ts` and Sprint 1's
+`riskScoring.test.ts`/`hashing.test.ts` were written against not-yet-built
+code.
 
-## Why this folder exists now
+## Files
 
-The team lead asked QA to set up the Playwright harness during Sprint 1, even
-though there's nothing to point it at, so that Sprint 2's QA work starts by writing
-tests on day one instead of first wiring up tooling. The config at the repo root
-(`playwright.config.ts`) already points `testDir` at this folder.
+- `dashboard-login.spec.ts` — DASH-1: wrong credentials show an error and
+  don't redirect; correct credentials redirect to `/dashboard`;
+  unauthenticated `/dashboard` redirects to `/login`.
+- `dashboard-queue.spec.ts` — DASH-2: seeded HIGH-risk rows render before
+  STANDARD rows; a HIGH row shows its risk badge; no real name renders in the
+  queue.
+- `pattern-watch.spec.ts` — DASH-3: a seeded Pattern Watch match renders;
+  the tab carries no HIGH/urgent flagging; "Mark reviewed" updates a match's
+  status.
+- `report-detail.spec.ts` — DASH-4: clicking a report row shows
+  `report-detail` with the report's risk level, triage data, and any SMS
+  alert timestamp.
 
-## What lands here, and when
+Each spec file's header comment states the fixture/seed data it assumes (e.g.
+DASH-2's "3 seeded reports (2 HIGH, 1 STANDARD)" DoD fixture, or PW-3's demo
+match) — none of these specs create their own seed data. `data-testid` values
+used throughout come from `docs/sprint-2-plan.md` §3.4 (frozen) verbatim, not
+guessed independently.
 
-Once DASH-1 (authenticated dashboard shell), DASH-2 (reports queue, High-Risk
-pinned), DASH-3 (Pattern Watch tab), and DASH-4 (report detail view) exist with a
-real, running `dashboard/` app, QA should add real `*.spec.ts` files here covering
-at minimum:
+## Running these specs
 
-- DASH-1: login with valid/invalid `counsellor_users` credentials; unauthenticated
-  requests to `/dashboard/*` redirect to login.
-- DASH-2: seeded mixed-risk reports render HIGH-risk first (newest-first within
-  group), visually flagged, followed by STANDARD; no real name ever rendered.
-- DASH-3: seeded `pattern_matches` rows render in a separate, non-urgent tab; "Mark
-  reviewed" works.
-- DASH-4: clicking a report row shows the full triage transcript matching the
-  underlying DB rows exactly.
-
-## Example test skeleton (intended pattern for Sprint 2)
-
-The commented-out example below is a template, not a real test — it is skipped and
-will not run. It shows the shape Sprint 2 specs should follow: seed data first (or
-rely on a seed fixture), log in through the real login form, then assert on
-rendered output rather than on internal state.
-
-```ts
-// server/__tests__/e2e/dashboard-queue.spec.ts
-//
-// import { test, expect } from '@playwright/test';
-//
-// test.skip('a seeded HIGH-risk report is pinned at the top of the queue', async ({ page }) => {
-//   // Assumes a seed script has already loaded 2 HIGH-risk and 1 STANDARD report
-//   // (mirrors DASH-2's DoD fixture: "3 seeded reports (2 HIGH, 1 STANDARD)").
-//   await page.goto('/login');
-//   await page.getByLabel('Username').fill('demo-counsellor');
-//   await page.getByLabel('Password').fill('demo-password');
-//   await page.getByRole('button', { name: 'Log in' }).click();
-//
-//   await expect(page).toHaveURL(/\/dashboard/);
-//
-//   const firstRow = page.getByTestId('report-row').first();
-//   await expect(firstRow).toHaveAttribute('data-risk-level', 'HIGH');
-// });
-```
-
-Remove this file's guidance once real specs exist and this README would otherwise
-just be stale narration.
+This dev sandbox cannot run `npm install` (registry unreachable — see
+`docs/ai-tool-usage-log.md`), so these specs have not been executed here; they
+are written for correctness against the real Playwright API and the frozen
+`data-testid` contract, ready to run once `dashboard/` is a real running app
+with Sprint 2's seed data loaded and `playwright.config.ts`'s `baseURL` points
+at it.

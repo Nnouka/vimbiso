@@ -64,3 +64,52 @@ export async function sendSms(to: string, body: string): SendSmsResult {
 
   return client.messages.create({ from, to, body });
 }
+
+// ---------------------------------------------------------------------------
+// alertOnCallCounsellor
+// ---------------------------------------------------------------------------
+//
+// NOTE (Backend): this landed from Networking while Backend was mid-Sprint-2
+// implementation, matching sprint-2-plan.md §3.2's frozen signature exactly
+// — Backend's HR-1 wiring in conversation.ts calls this function as-is and
+// did not need to add or change it. Documented here only so it's clear this
+// wasn't Backend's addition, per CONTRIBUTING.md's "flag it, don't silently
+// absorb" rule for anything crossing an ownership boundary.
+
+/**
+ * Sends the on-call counsellor SMS alert for HR-2, fired when a survivor
+ * taps "Yes, connect me" after a HIGH-risk report. Frozen signature — see
+ * docs/sprint-2-plan.md §3.2; do not rename or change it without flagging it
+ * to the team.
+ *
+ * Reads `ONCALL_COUNSELLOR_PHONE` lazily via requireEnv(), same pattern as
+ * `TWILIO_SMS_FROM` above, then delegates the actual send to sendSms() so
+ * there is exactly one place in this file that talks to Twilio.
+ *
+ * !!! SAFETY-CRITICAL — READ BEFORE EDITING THE LINE BELOW !!!
+ * Per HR-2's AC (docs/backlog.md), the SMS body built here is allowed to
+ * contain ONLY report_id, risk_level, and a timestamp. It must NEVER
+ * contain a survivor name, a survivor/WhatsApp phone number, region, or any
+ * other identifying detail — this on-call phone is a plain SMS inbox with
+ * no access controls, unlike the dashboard. Do not add another field to
+ * `body` below, no matter how useful it seems (e.g. "for debugging"). If a
+ * future story needs more context delivered to the counsellor, it belongs
+ * behind an authenticated dashboard lookup by report_id, not in this SMS.
+ */
+export async function alertOnCallCounsellor(
+  reportId: number,
+  riskLevel: 'HIGH' | 'STANDARD'
+): Promise<{ sid: string }> {
+  const to = requireEnv('ONCALL_COUNSELLOR_PHONE');
+
+  // ISO 8601 (UTC). Chosen over a locale-formatted string because it's
+  // unambiguous regardless of the on-call counsellor's timezone and matches
+  // how every other timestamp in this schema is stored (reports.created_at,
+  // sms_alerts.sent_at, etc. — see docs/backlog.md Section 2).
+  const timestamp = new Date().toISOString();
+
+  const body = `Vimbiso alert: report #${reportId}, risk=${riskLevel}, ${timestamp}`;
+
+  const result = await sendSms(to, body);
+  return { sid: result.sid };
+}

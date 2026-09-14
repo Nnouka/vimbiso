@@ -5,13 +5,40 @@
 
   <% if (!matches || matches.length === 0) { %>
     <div class="empty-state">
-      <p><strong>No pattern matches yet</strong> — this view will populate once DASH-3 is built.</p>
-      <p>DASH-3 will list <code>pattern_matches</code> rows here: linked report ids,
-        when the match was found, and a "Mark reviewed" action. By design this tab
-        stays visually calm — no red flags, no urgent language.</p>
+      <p><strong>No pattern matches yet</strong> — matches appear here once two or more
+        reports share the same hashed perpetrator identifier.</p>
     </div>
   <% } else { %>
-    <!-- DASH-3 will replace this whole branch with the real match list. -->
+    <!--
+      DASH-3: linked report_ids, created_at, and a "Mark reviewed" action.
+      Deliberately styled apart from the Reports Queue's HIGH-risk red — no
+      `data-risk` attribute, no risk-badge classes, calm neutral styling
+      (see public/css/style.css's .pattern-match-row rules) — this is an
+      institutional signal, not an urgent flag.
+    -->
+    <ul class="pattern-match-list">
+      <% matches.forEach(function (match) { %>
+        <li
+          class="pattern-match-row"
+          data-testid="pattern-match-row"
+        >
+          <div class="pattern-match-row__top">
+            <span class="pattern-status pattern-status--<%= match.status.toLowerCase() %>"><%= match.status %></span>
+            <span>Linked reports: <%= match.reportIds.map(function (id) { return '#' + id; }).join(', ') %></span>
+            <span>Found: <%= match.createdAtDisplay %></span>
+          </div>
+          <% if (match.status === 'REVIEWED') { %>
+            <p class="pattern-match-row__reviewed">
+              Reviewed by <%= match.reviewedBy || 'a counsellor' %><% if (match.reviewedAtDisplay) { %> on <%= match.reviewedAtDisplay %><% } %>.
+            </p>
+          <% } else { %>
+            <form method="POST" action="/dashboard/pattern-watch/<%= match.id %>/review">
+              <button type="submit" class="btn-secondary" data-testid="mark-reviewed-btn">Mark reviewed</button>
+            </form>
+          <% } %>
+        </li>
+      <% }); %>
+    </ul>
   <% } %>
 
 <%- include('partials/footer') %>

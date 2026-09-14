@@ -7,13 +7,51 @@
 
   <% if (!report) { %>
     <div class="empty-state">
-      <p><strong>No detail available yet</strong> — this view will populate once DASH-4 is built.</p>
-      <p>DASH-4 will show all 8 <code>triage_answers</code> (question text + answer),
-        the <code>risk_level</code>, and any <code>sms_alerts</code> timestamps for
-        this report here.</p>
+      <p><strong>Report not found</strong> — no report exists with that id.</p>
     </div>
   <% } else { %>
-    <!-- DASH-4 will replace this whole branch with the real transcript view. -->
+    <!--
+      DASH-4: all 8 triage_answers (question text + answer), risk_level, and
+      any sms_alerts timestamps for this report. No survivor phone number is
+      shown in full — see maskPhoneNumber() in server.ts.
+    -->
+    <div data-testid="report-detail">
+      <div class="report-detail__summary">
+        <span
+          class="risk-badge risk-badge--<%= (report.riskLevel || 'standard').toLowerCase() %>"
+        ><%= report.riskLevel || 'Not yet scored' %></span>
+        <span>Reported: <%= report.createdAtDisplay %></span>
+        <% if (report.region) { %><span>Region: <%= report.region %></span><% } %>
+        <span>WhatsApp: <%= report.maskedPhone %></span>
+      </div>
+
+      <h2>Triage transcript</h2>
+      <% if (!report.answers || report.answers.length === 0) { %>
+        <p class="page-subtitle">No triage answers recorded for this report.</p>
+      <% } else { %>
+        <ol class="triage-transcript">
+          <% report.answers.forEach(function (a) { %>
+            <li class="triage-transcript__row">
+              <span class="triage-transcript__question"><%= a.questionText %></span>
+              <span class="triage-transcript__answer triage-transcript__answer--<%= a.answer.toLowerCase() %>"><%= a.answer %></span>
+            </li>
+          <% }); %>
+        </ol>
+      <% } %>
+
+      <h2>SMS alerts</h2>
+      <% if (!report.smsAlerts || report.smsAlerts.length === 0) { %>
+        <p class="page-subtitle">No counsellor SMS alert has been sent for this report.</p>
+      <% } else { %>
+        <ul class="sms-alert-list">
+          <% report.smsAlerts.forEach(function (sms) { %>
+            <li>
+              Sent <%= sms.sentAtDisplay %><% if (sms.status) { %> — status: <%= sms.status %><% } %>
+            </li>
+          <% }); %>
+        </ul>
+      <% } %>
+    </div>
   <% } %>
 
 <%- include('partials/footer') %>

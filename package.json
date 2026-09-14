@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "migrate": "tsx server/migrations/run.ts",
-    "seed": "tsx server/seeds/content_en.ts"
+    "seed": "tsx server/seeds/run_all.ts"
   },
   "type": "commonjs",
   "dependencies": {

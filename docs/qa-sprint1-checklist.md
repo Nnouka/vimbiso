@@ -9,6 +9,8 @@ demo step) — not against a claim that it's done.
 
 Where this checklist and `docs/backlog.md` ever disagree, `backlog.md` wins.
 
+`docs/backlog.md` Section 5 now carries a `[x]`/`[ ]` box and a one-line `Status:` note per story too, kept current as PRs land (see `CONTRIBUTING.md` §"Opening a pull request"). That's the running, story-by-story picture; this file stays the stricter box — every item here ticks only against the live/demonstrated evidence this checklist was built to require, at actual sprint review, regardless of what backlog.md's interim status says.
+
 ---
 
 ## SEC-1 — Perpetrator identifier hashing utility

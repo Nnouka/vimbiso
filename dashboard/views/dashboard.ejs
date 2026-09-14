@@ -1,17 +1,49 @@
 <%- include('partials/header') %>
 
   <h1>Reports Queue</h1>
-  <p class="page-subtitle">High-risk reports pinned first, flagged red, once real data is wired in.</p>
+  <p class="page-subtitle">High-risk reports pinned first, newest first within each group.</p>
 
   <% if (!reports || reports.length === 0) { %>
     <div class="empty-state">
-      <p><strong>No reports yet</strong> — this view will populate once DASH-2 is built.</p>
-      <p>DASH-2 will render each report's id, timestamp, risk level, YES-answer summary,
-        region, and connect status here — HIGH-risk first (newest-first), visually
-        flagged red, then STANDARD. No real name is ever shown, per the data model.</p>
+      <p><strong>No scored reports yet</strong> — this queue only shows reports that have
+        completed triage (i.e. have a <code>risk_level</code>). Reports still in progress
+        aren't listed here.</p>
     </div>
   <% } else { %>
-    <!-- DASH-2 will replace this whole branch with the real queue table/list. -->
+    <!--
+      DASH-2: id, timestamp, risk level, YES-answer summary, region, and
+      connect status only — never a real name (there is no such column on
+      `reports`, per SEC-2), and the WhatsApp number is masked to its last 4
+      digits rather than shown in full (see server.ts's maskPhoneNumber()
+      comment for the reasoning).
+    -->
+    <ul class="report-list">
+      <% reports.forEach(function (report) { %>
+        <li>
+          <a
+            class="report-row report-row--<%= report.riskLevel.toLowerCase() %>"
+            href="/dashboard/reports/<%= report.id %>"
+            data-testid="report-row"
+            data-risk="<%= report.riskLevel %>"
+          >
+            <div class="report-row__top">
+              <span
+                class="risk-badge risk-badge--<%= report.riskLevel.toLowerCase() %>"
+                data-testid="risk-badge"
+              ><%= report.riskLevel %></span>
+              <span class="report-row__id">Report #<%= report.id %></span>
+              <span class="report-row__time"><%= report.createdAtDisplay %></span>
+            </div>
+            <div class="report-row__meta">
+              <span>Region: <%= report.region %></span>
+              <span>YES answers: <%= report.yesCount %> of 8<% if (report.yesKeys.length) { %> (<%= report.yesKeys.join(', ') %>)<% } %></span>
+              <span>Connect requested: <%= report.wantsCounsellorConnect ? 'Yes' : 'No' %></span>
+              <span>WhatsApp: <%= report.maskedPhone %></span>
+            </div>
+          </a>
+        </li>
+      <% }); %>
+    </ul>
   <% } %>
 
 <%- include('partials/footer') %>

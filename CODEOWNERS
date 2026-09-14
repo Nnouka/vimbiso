@@ -1,0 +1,36 @@
+# Vimbiso CODEOWNERS
+#
+# Encodes the reviewer pairing from CONTRIBUTING.md so GitHub can auto-request
+# the right reviewer on a PR. Replace every @placeholder-handle below with a
+# real GitHub username once the team's accounts are known — this file does
+# nothing useful while the handles are placeholders. GitHub also requires
+# branch protection to be turned on ("Require review from Code Owners") for
+# this file to actually block merges; it's inert until that setting is set.
+
+# Backend — reviewed by Networking
+/server/lib/hashing.ts        @placeholder-networking-handle
+/server/lib/riskScoring.ts    @placeholder-networking-handle
+/server/lib/content.ts        @placeholder-networking-handle
+/server/lib/conversation.ts   @placeholder-networking-handle
+/server/lib/db.ts             @placeholder-networking-handle
+/server/index.ts              @placeholder-networking-handle
+/server/migrations/          @placeholder-networking-handle
+/server/seeds/               @placeholder-networking-handle
+
+# Networking — reviewed by Backend
+/server/lib/whatsapp.ts   @placeholder-backend-handle
+/server/lib/sms.ts        @placeholder-backend-handle
+/server/routes/           @placeholder-backend-handle
+/docs/twilio-setup.md     @placeholder-backend-handle
+
+# Frontend / dashboard — reviewed by QA (functionality) and Designer (copy/UX)
+/dashboard/   @placeholder-qa-handle @placeholder-designer-handle
+
+# Tests and QA tooling — reviewed by whoever owns the code under test
+/server/__tests__/       @placeholder-backend-handle @placeholder-networking-handle
+/playwright.config.ts    @placeholder-backend-handle
+
+# Docs / process — any one other role
+/docs/            @placeholder-pm-handle
+/CONTRIBUTING.md  @placeholder-pm-handle
+/README.md        @placeholder-pm-handle

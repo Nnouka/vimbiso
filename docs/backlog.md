@@ -8,18 +8,20 @@ This document is meant to be handed story-by-story to a developer or a coding ag
 
 ## 1. Epics
 
-| Epic | Goal | Done when |
-|---|---|---|
-| **SEC** — Security & Privacy Foundations | Establish the no-real-name, consent-gated, hashed-identifier data model everything else builds on | No table anywhere stores a legal name or raw perpetrator text; every cross-report action requires explicit consent |
-| **INF** — Infrastructure & WhatsApp Bot Skeleton | Stand up the channel, backend, DB, and conversation state machine | A tester can message the sandbox number, pick a language, and reach the main menu, fully logged to Postgres |
-| **TRI** — Risk Triage & Scoring Engine | Implement the 8-question triage and deterministic scoring | Any completed triage produces a stored risk_level matching the documented override/threshold rules, proven by unit tests |
-| **HR** — High-Risk Automatic Response | Fire safety plan, counsellor SMS alert, and trusted-contact alert automatically on a single HIGH-risk report | A HIGH-risk test report triggers all four actions with zero human trigger and zero dependency on a second report |
-| **DIR** — Resource Directory / Standard-Risk Path | Serve a real, sourced, dated Kenyan resource directory | Every resource response includes a name, phone, source, and last-verified date |
-| **PW** — Pattern Watch | Consent-gated, hashed, non-urgent repeat-perpetrator matching, clearly demoted from the primary safety path | Two seeded reports naming the same identifier produce a visible dashboard match, with zero plaintext perpetrator data anywhere |
-| **DASH** — Counsellor Web Dashboard | Give counsellors/reviewers a queue view (High-Risk pinned) and a separate Pattern Watch tab | A logged-in reviewer sees reports sorted correctly and matches in a clearly non-urgent separate tab |
-| **LANG** — Multilingual Content Pipeline | Key-based content schema serving English/Swahili/French at FULL tier, Arabic/Kinyarwanda conditionally, Shona/Ndebele as architecture-only | All bot-facing strings come from the schema, tier labels are accurate, and English+Swahili+French pass the parity check |
-| **QA** — Testing & QA | Verify every language path and every risk branch before recording anything | A signed-off test script confirms all Must-priority flows work end-to-end on the deployed environment |
-| **SUB** — Submission Deliverables | Produce the demo video, pitch deck, written summary, README | All four artifacts exist, are accurate to what was actually built, and are submitted |
+| Epic | Goal | Done when | Status |
+|---|---|---|---|
+| **SEC** — Security & Privacy Foundations | Establish the no-real-name, consent-gated, hashed-identifier data model everything else builds on | No table anywhere stores a legal name or raw perpetrator text; every cross-report action requires explicit consent | In progress — SEC-1 done; SEC-2/SEC-3 built, pending live verification |
+| **INF** — Infrastructure & WhatsApp Bot Skeleton | Stand up the channel, backend, DB, and conversation state machine | A tester can message the sandbox number, pick a language, and reach the main menu, fully logged to Postgres | In progress — built, pending live deploy/verification |
+| **TRI** — Risk Triage & Scoring Engine | Implement the 8-question triage and deterministic scoring | Any completed triage produces a stored risk_level matching the documented override/threshold rules, proven by unit tests | In progress — TRI-2 done & tested; TRI-1/TRI-3 built, pending live verification |
+| **HR** — High-Risk Automatic Response | Fire safety plan, counsellor SMS alert, and trusted-contact alert automatically on a single HIGH-risk report | A HIGH-risk test report triggers all four actions with zero human trigger and zero dependency on a second report | Code-complete (HR-1..4), verified against an in-memory integration harness; pending live Twilio/Postgres verification |
+| **DIR** — Resource Directory / Standard-Risk Path | Serve a real, sourced, dated Kenyan resource directory | Every resource response includes a name, phone, source, and last-verified date | Code-complete (DIR-1..3); resources_kenya.ts seeded with best-effort entries — human spot-check against live source_urls still required before Day 5 |
+| **PW** — Pattern Watch | Consent-gated, hashed, non-urgent repeat-perpetrator matching, clearly demoted from the primary safety path | Two seeded reports naming the same identifier produce a visible dashboard match, with zero plaintext perpetrator data anywhere | Code-complete (PW-1..3), verified against the integration harness (incl. QA's patternMatch.test.ts cases); pending live Postgres verification and DASH-3 rendering check |
+| **DASH** — Counsellor Web Dashboard | Give counsellors/reviewers a queue view (High-Risk pinned) and a separate Pattern Watch tab | A logged-in reviewer sees reports sorted correctly and matches in a clearly non-urgent separate tab | DASH-1..4 code-complete against real Postgres data, pending live/Playwright verification (Sprint 2) |
+| **LANG** — Multilingual Content Pipeline | Key-based content schema serving English/Swahili/French at FULL tier, Arabic/Kinyarwanda conditionally, Shona/Ndebele as architecture-only | All bot-facing strings come from the schema, tier labels are accurate, and English+Swahili+French pass the parity check | In progress — schema + English done (LANG-1/2); Swahili/French/etc. not started |
+| **QA** — Testing & QA | Verify every language path and every risk branch before recording anything | A signed-off test script confirms all Must-priority flows work end-to-end on the deployed environment | In progress — QA-1's suites exist and pass under manual verification; QA-2/3/4 not started |
+| **SUB** — Submission Deliverables | Produce the demo video, pitch deck, written summary, README | All four artifacts exist, are accurate to what was actually built, and are submitted | In progress — README underway (SUB-4); video/deck/summary not started |
+
+*Status is tracked at the story level below (Section 5) — each story's `[x]`/`[ ]` and one-line "Status:" note is the source of truth; this row is just a roll-up.*
 
 ---
 
@@ -72,26 +74,33 @@ Use this exact content and logic — do not re-derive it.
 **In scope:** SEC-1, SEC-2, SEC-3 · INF-1, INF-2, INF-3, INF-4, INF-5 · TRI-1, TRI-2, TRI-3 · LANG-1, LANG-2 (started) · content-track: Swahili/French drafting begins in parallel, off the critical path.
 **Sprint done when:** TRI-3's DoD passes manually in English; SEC's unit tests are green; INF-2's migrations run clean.
 **Dependency note:** TRI-1/TRI-3 cannot start until INF-3/INF-4 exist; TRI-2 can be built in parallel (pure function, no bot dependency).
+**Status:** Code-complete for every story in scope (plus a full TypeScript conversion of all of it, done as an unplanned cross-cutting follow-up). SEC-1, TRI-2, and LANG-1 are fully done — their DoD required only unit tests/code review, both of which have run. Everything else in this sprint is implemented but still needs a live run against a real Postgres + Twilio Sandbox to close out (blocked in the dev sandbox that built this by `npm install` being unreachable — see `docs/ai-tool-usage-log.md`); see each story's `Status:` line below for specifics.
 
 ### Sprint 2 — Core Safety Features (Days 4–7)
 **Goal:** Every report — HIGH or STANDARD — produces its correct automatic response end-to-end, visible in a working dashboard, in English, Swahili, and (safety-plan subset) French.
 **In scope:** HR-1, HR-2, HR-3, HR-4 · DIR-1, DIR-2, DIR-3 · PW-1, PW-2, PW-3 · DASH-1, DASH-2, DASH-3, DASH-4 · LANG-3, LANG-4 (+ LANG-5/6/7 opportunistically) · SEC-3 disclosure wired in.
 **Sprint done when:** QA-1 tests pass; a HIGH-risk test report fires safety plan + real SMS + (if registered) trusted-contact alert; dashboard shows it pinned; a seeded Pattern Watch match renders in its own tab.
 **Dependency note:** HR-1 depends on TRI-3 (Sprint 1) and DIR-1 (hotline number must be seeded first, since HR-1 pulls it from `resources`, not a hardcoded string). DASH depends on data existing from HR/DIR/PW. PW-1 depends on SEC-1/SEC-2.
+**Status:** HR-1..4, DIR-1..3, and PW-1..3 are all code-complete as of this PR (Backend), wired into `conversation.ts`'s Sprint 1 state machine per its existing patterns, with `alertOnCallCounsellor()` landing in `sms.ts` (Networking) matching sprint-2-plan.md §3.2 exactly. Verified end-to-end with a hand-rolled in-memory-DB/Twilio integration harness in this sandbox (`npm install` still blocked here — see `docs/ai-tool-usage-log.md`) covering: full HIGH journey (safety plan -> real seeded hotline -> connect -> SMS alert logged -> trusted-contact alert -> PW-1 consent -> hash written), a second report sharing the same identifier producing a real `pattern_matches` row, HR-3 registration (valid + invalid input), STANDARD -> DIR-2 (both entry points) -> PW-1, and DIR-3. None of this has been run against a live Postgres/Twilio Sandbox yet — that remains the honest gap before these can be ticked `[x]`, same bar as Sprint 1. The dashboard (`dashboard/`) — DASH-1..4 — is separately code-complete against real Postgres data as of Frontend's PR (real auth, real reports queue, real Pattern Watch tab + review action, real report detail), pending the same live/Playwright verification; see DASH-1..4 below for specifics.
+
+**PM integration pass (post-merge):** independently re-ran QA's 13 `patternMatch.test.ts` cases against Backend's `patternMatch.ts` with a fresh jest-shim (not reusing Backend's own harness) — all 13 pass. Also ran a real `tsc --noEmit`-equivalent check (this sandbox has a global TypeScript install even though `npm install` is blocked — see `docs/ai-tool-usage-log.md` for exactly how, since it's a reusable trick for the rest of this build): every Sprint 1 + Sprint 2 `server/**/*.ts` and `dashboard/**/*.ts` file compiles clean against a hand-built ambient-types shim (`pg`/`twilio`/`express`/`bcrypt`/`jest` globals stood in for the real `@types/*` packages, which also aren't installable here), with only 3 residual errors — all three independently confirmed to be limitations of the hand-built shim itself (an overly-strict local `test.each` stub, an untyped `fs` stub), not real defects. This DID catch one real, genuine bug before it reached anyone: `server/seeds/content_en.ts` had `menu.body` defined twice (Sprint 1's original 3-option body, plus Sprint 2's 4-option body appended below it) — a duplicate object-literal key that TypeScript's strict mode flags as a hard compile error (`TS1117`). Fixed by removing the stale Sprint 1 line; Sprint 2's 4-option version is now the only one. This is exactly the class of bug a real `npm run typecheck` exists to catch — worth noting for the written summary's AI-tool-usage section.
 
 ### Sprint 3 — Testing & Submission (Days 8–10)
 **Goal:** A judge can watch a demo showing a real, working, multilingual safety journey and read a submission package that's honest about scope.
 **In scope:** QA-2, QA-3, QA-4 (Day 8) · SUB-1, SUB-2, SUB-3, SUB-4 (Days 9–10).
 **Sprint done when:** All four submission artifacts exist and match what was actually built — no feature claimed in the deck/video that isn't real in the repo.
 **Dependency note:** QA-2/QA-3 must pass *before* SUB-1 recording starts — never script a demo around a feature that hasn't been verified working.
+**Status:** Not started as deliverable artifacts, though SUB-2/SUB-3's underlying content is already agreed and captured in `docs/mvp-spec.md` and `docs/ai-tool-usage-log.md`, and SUB-4 (README) is underway.
 
 ---
 
 ## 5. User Stories
 
+**Status convention:** `- [x]` = this story's DoD has been fully met, including any live/manual verification it calls for — not just "the code exists." `- [ ]` = not yet, whether that means untouched, code-complete-but-unverified, or blocked on something else. Every story carries a one-line `Status:` note explaining exactly where it stands — read that before assuming `[ ]` means "nothing done." Whoever's PR finally satisfies a story's full DoD flips its box to `[x]` and updates the `Status:` line as part of that PR (see `CONTRIBUTING.md`) — don't tick it in a separate docs-only commit disconnected from the work that finished it.
+
 ### EPIC: SEC — Security & Privacy Foundations
 
-**SEC-1 — Perpetrator identifier hashing utility**
+- [x] **SEC-1 — Perpetrator identifier hashing utility**
 Story: As a backend developer, I want a reusable server-side function that normalizes and salt-hashes a perpetrator identifier string, so that no raw perpetrator-identifying text is ever persisted.
 Priority: **Must**
 AC:
@@ -100,10 +109,11 @@ AC:
 - Given any input, when processed, then the raw text is never written to any table — only `perpetrator_hashes.hash_value` is stored.
 - Given no perpetrator text is supplied, when a report is submitted, then no row is created in `perpetrator_hashes`.
 Technical notes: Node `crypto` module, HMAC-SHA256, secret in env var `PERPETRATOR_HASH_SECRET`; normalization = lowercase, trim, collapse whitespace, strip punctuation; implement in `/server/lib/hashing.js` with tests in `hashing.test.js`.
+Status: Implemented in `server/lib/hashing.ts`; ≥5 unit tests exist and pass; code-reviewed for zero raw-text writes.
 Dependencies: none.
 DoD: Function implemented, ≥5 unit tests passing, code review confirms no code path writes raw text anywhere.
 
-**SEC-2 — No-real-name schema + consent flags**
+- [ ] **SEC-2 — No-real-name schema + consent flags**
 Story: As a product owner, I want `reports` and `trusted_contacts` to have no legal-name field and to gate every cross-report or outbound action behind an explicit consent flag.
 Priority: **Must**
 AC:
@@ -111,14 +121,16 @@ AC:
 - Given `perpetrator_consent_given` is false/null, when a report closes, then no `perpetrator_hashes` row is written for it.
 - Given a survivor hasn't tapped "Yes, connect me," when the HIGH-risk flow runs, then `wants_counsellor_connect` stays false and no SMS fires.
 Technical notes: add `perpetrator_consent_given boolean default false`, `wants_counsellor_connect boolean default false`, `connect_requested_at timestamp null` to `reports` (per Section 2).
+Status: Schema columns exist in `server/migrations/001_create_reports.sql`; consent-gate *behavior* depends on PW-1/HR-2 (not built yet, Sprint 2), and README's Privacy section isn't written yet.
 Dependencies: none.
 DoD: Migration applied; schema matches this checklist; documented in README's Privacy section.
 
-**SEC-3 — Transit-privacy disclosure**
+- [ ] **SEC-3 — Transit-privacy disclosure**
 Story: As a survivor, I want to be told, before typing anything sensitive, that this chat runs over WhatsApp/Twilio and isn't a zero-knowledge system, so I can decide what to share.
 Priority: **Should**
 AC: Given language selection just completed, when the main menu is about to show, then a one-line disclosure fires first (per language): *"This chat runs over WhatsApp. We don't store your name, but WhatsApp/our phone provider can see this conversation exists. Consider deleting this chat afterward."* Fires exactly once per conversation.
 Technical notes: content key `disclosure_message`; track via `conversation_state.disclosure_shown`.
+Status: Logic implemented in `conversation.ts` (fires once, tracked via `disclosure_shown`); not yet verified against a live/sandbox conversation.
 Dependencies: INF-3.
 DoD: Fires once per new conversation, in the selected language, verified manually.
 
@@ -126,43 +138,48 @@ DoD: Fires once per new conversation, in the selected language, verified manuall
 
 ### EPIC: INF — Infrastructure & WhatsApp Bot Skeleton
 
-**INF-1 — Provision Twilio WhatsApp Sandbox + backend**
+- [ ] **INF-1 — Provision Twilio WhatsApp Sandbox + backend**
 Story: As a developer, I want a deployed Express backend wired to a Twilio WhatsApp Sandbox number, so messages can flow both ways.
 Priority: **Must**
 AC: Given a tester joins the sandbox via join code, when they send any message, then `POST /webhook/whatsapp` receives it and the backend echoes a reply within 5 seconds.
 Technical notes: Twilio WhatsApp Sandbox, Express route, Twilio Node SDK, hosted on Railway/Render, env vars `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/`WHATSAPP_FROM`.
+Status: Webhook route + `verifyWebhookSignature` implemented in `server/routes/webhook.ts`; not yet deployed or tested against a live Twilio Sandbox.
 Dependencies: none.
 DoD: Deployed and reachable; echo test passes in the Twilio console.
 
-**INF-2 — Postgres schema + migrations**
+- [ ] **INF-2 — Postgres schema + migrations**
 Story: As a developer, I want the full schema (Section 2) created via migrations, so every later story has somewhere to read/write.
 Priority: **Must**
 AC: Given the migration runner executes, when it completes, then every table in Section 2 exists with the listed fields.
 Technical notes: `node-pg-migrate` or Prisma, one migration per table.
+Status: All 10 migrations written, matching `docs/data-model.md` field-for-field; not yet run against a live Postgres instance (`npm run migrate` unverified here).
 Dependencies: none.
 DoD: `npm run migrate` runs clean on a fresh DB; matches Section 2 exactly.
 
-**INF-3 — Conversation state machine + language selector**
+- [ ] **INF-3 — Conversation state machine + language selector**
 Story: As a survivor, I want to pick my language on first contact, so everything after is understandable.
 Priority: **Must**
 AC: Given a first-time sender, when they message the number, then they get a list message: "English / Kiswahili / Français" (+ additional options once LANG-5/6 are live); given a selection, then `conversation_state.language` persists for the session; given 24h of inactivity, then the next message re-prompts language selection.
 Technical notes: `conversation_state` table (Section 2); Twilio interactive List Message type.
+Status: State machine + language selector implemented, including 24h-stale reset; not yet exercised against a live conversation/DB.
 Dependencies: INF-1, INF-2.
 DoD: Language persists across a multi-message session; resets after the 24h Twilio session boundary.
 
-**INF-4 — Main menu**
+- [ ] **INF-4 — Main menu**
 Story: As a user, I want a menu after language selection, so I can choose what I need.
 Priority: **Must**
 AC: Given language is set, when the menu sends, then it shows exactly three translated options: "Report something that happened" / "Find help near me" / "Know your rights," each routing correctly (to TRI-1, DIR-2, DIR-3 respectively).
 Technical notes: strings from `content_strings` keys `menu.report`/`menu.find_help`/`menu.rights`.
+Status: "Report something that happened" fully routes to TRI-1. "Find help near me" / "Know your rights" currently route to a placeholder stub pending DIR-2/DIR-3 (Sprint 2); not yet manually verified live.
 Dependencies: INF-3, LANG-1.
 DoD: All three paths route correctly in English, manually verified.
 
-**INF-5 — Device-safety guidance ("quick exit" equivalent)**
+- [ ] **INF-5 — Device-safety guidance ("quick exit" equivalent)**
 Story: As a survivor worried about someone checking my phone, I want basic device-safety guidance, so using Vimbiso doesn't add risk.
 Priority: **Should** (first cut if time is short)
 AC: Given the main menu, when the user sends "0" or "help hiding this," then the bot sends guidance: save the contact under a neutral name, use WhatsApp's own Clear Chat/Archive, and an honest note that there is no disguised app in this PoC.
 Technical notes: content key `guidance.device_safety`.
+Status: Implemented (triggers on "0"/"help hiding this"); not yet live-verified or copy-checked against current WhatsApp UI.
 Dependencies: INF-4.
 DoD: Sends correctly; copy checked against current WhatsApp UI terminology.
 
@@ -170,15 +187,16 @@ DoD: Sends correctly; copy checked against current WhatsApp UI terminology.
 
 ### EPIC: TRI — Risk Triage & Scoring Engine
 
-**TRI-1 — Triage question flow**
+- [ ] **TRI-1 — Triage question flow**
 Story: As a survivor, I want to answer 8 short yes/no questions one at a time via tappable buttons, so I don't have to type sensitive details.
 Priority: **Must**
 AC: Given "Report something that happened" is selected, when the flow starts, then question 1 (STRANGLE, per Section 3) sends as a Quick Reply button set (Yes/No/Prefer not to say); each answer writes a row to `triage_answers` and advances to the next question in the fixed order (STRANGLE → WEAPON → KILL_THREAT → ESCALATION → SEPARATION → SEXUAL_COERCION → CONTROL → SELF_PERCEIVED_DANGER); "Prefer not to say" stores as `SKIP`.
 Technical notes: Twilio interactive buttons; create a `reports` row with `status='IN_PROGRESS'` at flow start; `conversation_state.current_step` tracks progress.
+Status: Flow fully implemented (8 fixed-order questions, SKIP handling, DB writes); not yet run against a live DB to confirm the 8 stored rows.
 Dependencies: INF-3, INF-4, LANG-2 (and LANG-3/4 for translated versions).
 DoD: A full English run produces 8 `triage_answers` rows tied to one `report_id`, verified in the DB.
 
-**TRI-2 — Risk scoring function**
+- [x] **TRI-2 — Risk scoring function**
 Story: As a developer, I want a pure, tested function implementing the Section 3 rules, independent of the bot.
 Priority: **Must**
 AC (examples, not exhaustive):
@@ -187,13 +205,15 @@ AC (examples, not exhaustive):
 - Given exactly 4 of {ESCALATION, SEPARATION, SEXUAL_COERCION, CONTROL, SELF_PERCEIVED_DANGER} = YES, no override triggered → HIGH (threshold).
 - Given exactly 3 of those 5 = YES, no override → STANDARD.
 Technical notes: `scoreRisk(answers): 'HIGH'|'STANDARD'` in `/server/lib/riskScoring.js`, no DB access; `SKIP` = `NO`.
+Status: `scoreRisk()` implemented in `server/lib/riskScoring.ts`; 14 unit tests cover every override key individually, the 4-vs-3 threshold boundary, and all-NO — all passing.
 Dependencies: none (parallel-buildable with TRI-1).
 DoD: ≥10 unit tests covering every override key individually, the 4-vs-3 threshold boundary, and all-NO — all passing.
 
-**TRI-3 — Wire scoring into the flow**
+- [ ] **TRI-3 — Wire scoring into the flow**
 Story: As the system, I want risk scored immediately after the 8th answer, so the correct response fires without delay.
 Priority: **Must**
 AC: Given the 8th answer is received, when processed, then `scoreRisk()` runs, `reports.risk_level` and `status='SCORED'` are set, and control passes to HR-1 (if HIGH) or DIR-2 (if STANDARD) in the same handling cycle — no extra user action required.
+Status: Scoring-on-8th-answer wired in `conversation.ts`; not yet manually verified live.
 Dependencies: TRI-1, TRI-2.
 DoD: Manual test — YES to Q1 only auto-triggers the HIGH branch with no further input.
 
@@ -201,36 +221,40 @@ DoD: Manual test — YES to Q1 only auto-triggers the HIGH branch with no furthe
 
 ### EPIC: HR — High-Risk Automatic Response
 
-**HR-1 — Immediate safety-plan sequence**
+- [ ] **HR-1 — Immediate safety-plan sequence**
 Story: As a survivor scored HIGH, I want clear guidance immediately, so I know what to do without waiting on anyone.
 Priority: **Must**
 AC: Given `risk_level=HIGH`, when the response fires, then the bot sends, in the user's language: (1) danger-intro line, (2) the safety-plan list (pack a bag, identify a safe neighbor, memorize one number, keep phone charged), (3) the real hotline number pulled from `resources`, (4) a Yes/No "connect me to a counsellor now?" prompt.
 Technical notes: keys `highrisk.intro`/`highrisk.plan_1..4`/`highrisk.connect_prompt`; hotline number queried from `resources` (category='hotline', country='KE'), never hardcoded.
+Status: Implemented in `conversation.ts` (`runHighRiskSequence`/`sendHighRiskSafetyPlan`), continuing in the same handling cycle as `highrisk.bridge` per conversation-design.md §8 — no added pause. Hotline number is a live `SELECT ... FROM resources WHERE category='hotline' AND country='KE'` at send time (never hardcoded); if that query returns no row, the hotline message is skipped and an error is logged rather than falling back to a guessed number. Verified end-to-end (all 4 parts, in order, real seeded hotline number) against a hand-rolled in-memory-DB integration harness in this sandbox (no live Postgres/Twilio available — `npm install` blocked, see `docs/ai-tool-usage-log.md`); NOT yet verified against a real Twilio Sandbox/Postgres, and NOT yet verified in Swahili (content_sw.ts seeds the `highrisk.*` keys but is `tier='PARTIAL'`/unreviewed, per LANG-3 — DoD's "verified... in Swahili" needs both a live run and a real reviewer sign-off, neither done yet).
 Dependencies: TRI-3, DIR-1.
 DoD: All 4 parts arrive within 5 seconds, verified in English and Swahili.
 
-**HR-2 — Counsellor-connect logging + real SMS alert**
+- [ ] **HR-2 — Counsellor-connect logging + real SMS alert**
 Story: As an on-call counsellor, I want an immediate SMS when a survivor requests connection, so I can call back without watching a chat app.
 Priority: **Must**
 AC:
 - Given "Yes" is tapped, when processed, then `wants_counsellor_connect=true`, `connect_requested_at` is set, a `sms_alerts` row is written, and a real Twilio SMS is sent to `ONCALL_COUNSELLOR_PHONE` containing only `report_id`, `risk_level`, and timestamp — no survivor name/number in the SMS body.
 - Given "No" is tapped, when processed, then no SMS fires and the hotline number remains visible for self-service.
 Technical notes: Twilio SMS API; `sms_alerts(id, report_id, sent_to, sent_at, twilio_sid, status)`.
+Status: Wired into `conversation.ts`'s `handleConnectResponse`: "Yes" sets `wants_counsellor_connect=true`/`connect_requested_at=now()`, calls Networking's `alertOnCallCounsellor(reportId, riskLevel)` (sms.ts — Backend does not hand-format the SMS body), and writes an `sms_alerts` row with the returned `twilio_sid` (status `'sent'`, or `'failed'` with a null sid if the SMS call throws, so a failed send stays visible for audit rather than silently disappearing). "No" sends no SMS. Verified against the in-memory integration harness: exactly one `sms_alerts` row per Yes-tap, correct `sent_to`, and the actual SMS body spot-checked to contain only `report_id`/`risk_level`/timestamp — no survivor number/name. NOT yet verified as a real SMS against a live Twilio account/test phone (this environment cannot reach the Twilio API — see `docs/ai-tool-usage-log.md`); that live send is still required before this DoD is truly met.
 Dependencies: HR-1.
 DoD: A real SMS arrives on a test phone within 10 seconds — verified live, not mocked, before video recording.
 
-**HR-3 — Trusted-contact registration**
+- [ ] **HR-3 — Trusted-contact registration**
 Story: As a survivor, I want to register one trusted contact in advance, so someone can be quietly alerted later.
 Priority: **Should** (first thing cut if Sprint 2 slips)
 AC: Given "Set up a trusted contact" is selected, when a WhatsApp number is provided, then a `trusted_contacts` row is created keyed to `survivor_whatsapp_number` (not `report_id` — it must persist across future reports).
 Technical notes: schema as extended in Section 2.
+Status: Implemented as the main menu's 4th option (`menu_trusted_contact`, additive per sprint-2-plan.md §3.3 — the existing 3 options/keys/routing are unchanged). Loosely validates the submitted number (starts with `+`, mostly digits) and re-prompts with `trusted_contact.invalid_number` on failure. Upserts by `survivor_whatsapp_number` (not `report_id`) — a second registration replaces the first (per conversation-design.md §9.1's "you can change this contact anytime") rather than accumulating rows, resetting `alert_sent_at` to null on change. Verified end-to-end against the integration harness, including HR-4 retrieving the registered contact for a later, separate HIGH report from the same survivor number. Not yet verified against a live Postgres/Twilio Sandbox conversation.
 Dependencies: INF-3.
 DoD: Registration completes and is retrievable by HR-4 in a test.
 
-**HR-4 — Automatic trusted-contact alert**
+- [ ] **HR-4 — Automatic trusted-contact alert**
 Story: As a trusted contact, I want a vague, coded check-in message if she's scored HIGH risk, so I know to reach out without exposing what happened.
 Priority: **Should** (tied to HR-3; cut together)
 AC: Given a registered contact exists and HIGH fires, when HR-1 runs, then the contact receives exactly: *"Thinking of you — call me when you can."* and `alert_sent_at` updates. Given no contact is registered, then this step silently no-ops.
+Status: Implemented (`maybeAlertTrustedContact` in `conversation.ts`, called from `handleConnectResponse` after the Yes/No ack, regardless of which was tapped). Sends the exact verbatim, untranslated string via `whatsapp.ts`'s `sendText` to the contact's own number and updates `alert_sent_at`; a lookup failure or send failure is caught and logged rather than breaking the rest of the survivor's flow. No contact registered → confirmed silent no-op (no message to anyone, no error). Verified against the integration harness (exact message text asserted byte-for-byte, `alert_sent_at` confirmed set). Not yet verified against a live WhatsApp send.
 Dependencies: HR-1, HR-3.
 DoD: Test HIGH-risk report with a registered contact results in the contact receiving the message.
 
@@ -238,25 +262,28 @@ DoD: Test HIGH-risk report with a registered contact results in the contact rece
 
 ### EPIC: DIR — Resource Directory / Standard-Risk Path
 
-**DIR-1 — Seed real, sourced Kenyan directory**
+- [ ] **DIR-1 — Seed real, sourced Kenyan directory**
 Story: As the product owner, I want ≥5–8 real, verifiable Kenyan GBV entries loaded, so every answer is traceable.
 Priority: **Must**
 AC: Given `resources`, when queried, then it contains at minimum HAK/1195 national hotline, at least one Nairobi-region resource, Kenya Police Gender & Children's Desk contact, and the State Department for Gender's reporting channel — each with non-null `name`, `phone`, `source_name`, `source_url`, `last_verified_date` (seed date).
 Technical notes: seed file `/server/seeds/resources_kenya.js`.
+Status: `server/seeds/resources_kenya.ts` created, seeding exactly the 4 required entries (HAK/1195 national hotline, one Nairobi resource (GVRC), Kenya Police Gender & Children's Desk, State Department for Gender reporting channel), each with non-null `name`/`phone`/`source_name`/`source_url`/`last_verified_date`. Ran clean against the integration harness. **Important honesty caveat, per sprint-2-plan.md §3.5's own instruction:** this agent has no live internet access in this sandbox and could not call/verify any of these numbers — every entry is labeled in the seed file's own comments with its actual confidence level (high for the well-known 1195/999 numbers, low for the two entries this agent could not confidently recall a dedicated number for), and the file's header says explicitly not to present any of them publicly until a human actually verifies. DIR-1's DoD "every entry spot-checked against its source_url before Day 5" is a human task NOT satisfied by this PR — do not tick this story `[x]` until that spot-check actually happens.
 Dependencies: INF-2.
 DoD: Seed runs clean; every entry spot-checked against its `source_url` before Day 5.
 
-**DIR-2 — "Find Help" region picker**
+- [ ] **DIR-2 — "Find Help" region picker**
 Story: As a user, I want to pick my area and get a real, dated resource.
 Priority: **Must**
 AC: Given "Find help near me" or the Standard-risk branch, when triggered, then the bot offers "Nairobi / Mombasa / Other-National"; given a selection, then it returns a matching entry's name, phone, and "Source: {source_name}, last verified {date}"; given no region-specific match, the national hotline is returned as fallback.
+Status: Implemented — both entry points (main-menu "Find help near me" and the automatic post-STANDARD handoff) share `sendRegionPicker`/`handleRegionSelection`/`sendRegionResult` in `conversation.ts`. Offers Nairobi/Mombasa/"Other / National" (rendered per conversation-design.md §10's note on the hyphen; not literally "Other-National" as a string anywhere). Nairobi/Mombasa query `resources` by region; "Other / National" and any region with no region-specific row fall back to the national hotline. Result uses the exact `dir.result_format` 3-line template with a human-readable date. All 3 options verified against the integration harness to return a real, non-empty, correctly-sourced result (including the Nairobi-specific and national-fallback paths). `reports.region` is also persisted when this picker was reached via a scored report (not part of DIR-2's own AC, but uses the existing schema column and feeds DASH-2's queue view). Not yet verified live.
 Dependencies: DIR-1, INF-4.
 DoD: All 3 region options return a non-empty, correctly-sourced result.
 
-**DIR-3 — "Know your rights" example content**
+- [ ] **DIR-3 — "Know your rights" example content**
 Story: As a user, I want basic rights orientation, clearly marked as unreviewed example content.
 Priority: **Could**
 AC: Given "Know your rights" is selected, then 2–3 short points send, prefixed with: *"This is example information and has not yet been reviewed by a legal partner."*
+Status: Implemented (`sendRightsContent` in `conversation.ts`) — one message, disclaimer first (verbatim) then all 3 points, so the disclaimer can't be scrolled past separately per conversation-design.md §11. All 3 points shipped (not cut). Ships in English only for Sprint 2 (no Swahili/French translation of `rights.*` was in either LANG-3/4's safety-critical subset or sprint-2-plan.md §4's translation list) — the DoD's "visible in every language it ships in" holds trivially since English is the only language it ships in right now. Verified against the integration harness.
 Dependencies: INF-4.
 DoD: Disclaimer visible in every language it ships in; first item cut if Sprint 2 runs long.
 
@@ -264,25 +291,28 @@ DoD: Disclaimer visible in every language it ships in; first item cut if Sprint 
 
 ### EPIC: PW — Pattern Watch
 
-**PW-1 — Optional consent-gated perpetrator capture**
+- [ ] **PW-1 — Optional consent-gated perpetrator capture**
 Story: As a survivor, I want to optionally name who harmed me for pattern-detection only, clearly separate from my own case.
 Priority: **Should**
 AC: Given a report is scored, when the closing step is reached, then an optional, skippable prompt appears: *"Would you like to name who did this, only to check if others have reported the same person? This never changes what happens with your case."* A "yes" sets `perpetrator_consent_given=true` and passes text to SEC-1's hasher; "no"/skip ends the flow.
+Status: Implemented, firing after HR-1's sequence completes (HIGH) or after DIR-2's picker completes when reached via a scored report (STANDARD) — not after a menu-triggered DIR-2 lookup, which has no report to consent for. "Yes" sends the PM-approved combined ack+ask (`pw.consent_yes_ack`, folding the unlisted "ask for text" key into the existing one per sprint-2-plan.md §4/conversation-design.md §12.1's documented judgment call) and awaits the next free-text message as the identifier. `perpetrator_consent_given=true` is set on `reports` in exactly one code path (`handlePwIdentifier`), strictly gated behind this "Yes" tap, BEFORE the hash is written — verified by direct inspection of the in-memory harness's DB dump that the raw typed text never appears anywhere. "No"/skip ends the flow with zero `perpetrator_hashes` row, confirmed. Not yet verified against a live Postgres conversation.
 Dependencies: TRI-3, SEC-1, SEC-2.
 DoD: Consenting produces exactly one `perpetrator_hashes` row with zero raw text anywhere in the DB (verified by direct inspection).
 
-**PW-2 — Hash matching logic**
+- [ ] **PW-2 — Hash matching logic**
 Story: As the system, I want to link independent reports whose hashed perpetrator identifier matches.
 Priority: **Should**
 AC: Given a new `perpetrator_hashes` row's `hash_value` matches an existing row from a *different* `report_id`, then a `pattern_matches` row is created/updated (`hash_value`, `report_ids[]`, `status='NEW'`). Given no match, no row is created.
 Technical notes: `pattern_matches` is a new table (Section 2).
+Status: `server/lib/patternMatch.ts` implements `evaluateHashMatch()` matching sprint-2-plan.md §3.1's frozen shape exactly, satisfying every case in QA's `server/__tests__/patternMatch.test.ts` (unedited by Backend) — verified by hand-executing all 13 documented cases from that file against the real implementation via `tsx` (this sandbox cannot run `npm install`/Jest itself; see the implementation report for exactly how). `recordAndCheckPattern(reportId, hashValue)` is the DB-touching wrapper: excludes the current `report_id` in its `perpetrator_hashes` lookup, calls `evaluateHashMatch`, and upserts `pattern_matches` (new row if none exists for that `hash_value`, else merges the id into `report_ids` deduped, WITHOUT touching `status`/`reviewed_by`/`reviewed_at`). Verified end-to-end against the integration harness: two reports naming the same identifier (including with different casing/punctuation) produce exactly one `pattern_matches` row referencing both. Not yet verified against a live Postgres instance.
 Dependencies: PW-1, SEC-1.
 DoD: Two test reports with the same normalized identifier produce exactly one `pattern_matches` row referencing both.
 
-**PW-3 — Seed demo match data**
+- [ ] **PW-3 — Seed demo match data**
 Story: As the developer preparing the demo, I want 2–3 scripted, clearly-fake test reports that deliberately match, so Pattern Watch has something real to show.
 Priority: **Must** (for demo credibility, even though the underlying feature is Should)
 AC: Given the seed runs, when the dashboard's Pattern Watch tab loads, then at least one matched pair is visible, using an obviously-fake, clearly test-labeled identifier.
+Status: `server/seeds/pattern_watch_demo.ts` seeds 3 obviously-fake `channel='demo-seed'` reports and hashes the literal string `"TEST-DEMO-PERPETRATOR-DO-NOT-USE"` for all of them via the SAME code path a real PW-1 consent flow uses (`normalizeAndHash` + `recordAndCheckPattern`), producing exactly one `pattern_matches` row referencing all 3 fake report_ids — confirmed by running the seed against the integration harness. Nothing in the fake data resembles a real perpetrator (verified: the identifier string itself says "DO-NOT-USE"). Wired into `npm run seed` via the new `server/seeds/run_all.ts` runner (see PR notes on the `package.json` `seed` script change). Not yet confirmed rendering in the actual dashboard's Pattern Watch tab against a live Postgres instance — that's DASH-3/QA-3's remaining live-verification step.
 Dependencies: PW-2.
 DoD: Visible correct match before Day 9 recording.
 
@@ -290,32 +320,36 @@ DoD: Visible correct match before Day 9 recording.
 
 ### EPIC: DASH — Counsellor Web Dashboard
 
-**DASH-1 — Authenticated dashboard shell**
+- [ ] **DASH-1 — Authenticated dashboard shell**
 Story: As a counsellor, I want to log in, so report data isn't publicly exposed.
 Priority: **Must**
 AC: Given no session, then a login form shows; given correct `counsellor_users` credentials, then a session starts and the queue loads; given wrong credentials, then an error shows and no session is created.
 Technical notes: single shared demo login acceptable for PoC (per-counsellor RBAC explicitly out of scope); bcrypt-hashed password.
+Status: Real auth implemented — `POST /login` looks up `counsellor_users` by username, `bcrypt.compare`s against `password_hash`, sets `req.session.counsellor` only on a match, and `/dashboard*` redirects unauthenticated requests to `/login` (see `dashboard/server.ts`'s `requireAuth` middleware). `dashboard/seed.ts` (new, `npm run seed`) creates the demo counsellor login `server/__tests__/e2e/dashboard-login.spec.ts` assumes as a fixture. Session store is still in-memory `express-session`, which the story's DoD doesn't require changing. Not yet run against a live Postgres instance or Playwright (`npm install` blocked here — see `docs/ai-tool-usage-log.md`); code carefully checked against `dashboard-login.spec.ts` and the `counsellor_users` migration column names instead.
 Dependencies: INF-2.
 DoD: Login/logout works; `/dashboard/*` redirects unauthenticated requests to login.
 
-**DASH-2 — Reports queue, High-Risk pinned**
+- [ ] **DASH-2 — Reports queue, High-Risk pinned**
 Story: As a counsellor, I want High-Risk reports visually flagged at the top.
 Priority: **Must**
 AC: Given mixed-risk reports exist, then HIGH reports render first (newest-first within group), visually flagged red, followed by STANDARD; each row shows id, timestamp, risk_level, YES-answer summary, region, connect status — never a real name.
+Status: Wired to real data — queries `reports` LEFT JOINed to `triage_answers` (only reports with a non-null `risk_level`, i.e. already scored), ordered HIGH before STANDARD then `created_at DESC` within each group. Each row shows id, timestamp, risk badge, a YES-answer count + which question keys were YES, region, and connect status. `whatsapp_number` is masked to its last 4 digits rather than shown in full (a judgment call — SEC-2 doesn't literally name this column, but it's PII a shared screen shouldn't casually expose; see `maskPhoneNumber()` in `dashboard/server.ts`). `data-testid="report-row"`/`data-risk`/`data-testid="risk-badge"` added exactly per sprint-2-plan.md §3.4. Not yet run against the DoD's 3-seeded-report fixture or Playwright live (blocked on `npm install`) — checked by hand against `dashboard-queue.spec.ts` instead.
 Dependencies: DASH-1, TRI-3.
 DoD: 3 seeded reports (2 HIGH, 1 STANDARD) render in correct order with correct flags.
 
-**DASH-3 — Pattern Watch tab**
+- [ ] **DASH-3 — Pattern Watch tab**
 Story: As an institutional reviewer, I want a separate, non-urgent tab for matches.
 Priority: **Should**
 AC: Given `pattern_matches` rows exist, then the tab shows linked `report_ids`, `created_at`, and a "Mark reviewed" button — visually distinct, no red flags, no urgent language.
+Status: Wired to real `pattern_matches` data — shows linked `report_ids`, `created_at`, and a "Mark reviewed" form per row (`data-testid="pattern-match-row"`/`"mark-reviewed-btn"`), posting to the new `POST /dashboard/pattern-watch/:id/review` route (sets `status='REVIEWED'`, `reviewed_by` from the session counsellor's name, `reviewed_at=now()`). Styled deliberately apart from the Reports queue's HIGH-risk red (new `.pattern-status`/`.pattern-match-row` CSS, no `risk-badge`/`data-risk` reuse) — see `public/css/style.css`. Not yet run against PW-3's seed or Playwright live (blocked on `npm install`, and PW-2/PW-3 themselves are unbuilt as of this PR) — checked by hand against `pattern-watch.spec.ts` instead.
 Dependencies: DASH-1, PW-2.
 DoD: PW-3's seeded match renders and can be marked reviewed.
 
-**DASH-4 — Report detail view**
+- [ ] **DASH-4 — Report detail view**
 Story: As a counsellor following up, I want a full triage transcript for one report.
 Priority: **Should**
 AC: Given a report row is clicked, then all 8 `triage_answers` (question text + answer), `risk_level`, and any `sms_alerts` timestamps display.
+Status: Wired to real data — queries the report row, all `triage_answers` (question_key mapped to the canonical English question text from backlog.md §3, plus the given answer), and any `sms_alerts` rows for that `report_id`, inside a `data-testid="report-detail"` container. Each queue row is now a real link to `/dashboard/reports/:id`. Not yet run against a live fixture with a full 8-answer report or Playwright (blocked on `npm install`) — checked by hand against `report-detail.spec.ts` and the `triage_answers`/`sms_alerts` migration column names instead.
 Dependencies: DASH-2.
 DoD: Detail view matches underlying DB rows exactly for a test report.
 
@@ -323,54 +357,61 @@ DoD: Detail view matches underlying DB rows exactly for a test report.
 
 ### EPIC: LANG — Multilingual Content Pipeline
 
-**LANG-1 — Structured content schema**
+- [x] **LANG-1 — Structured content schema**
 Story: As a developer, I want every user-facing string served from `content_strings`, keyed by (key, language), so adding a language never touches bot logic.
 Priority: **Must**
 AC: Given a handler needs a string, when it calls `t(key, language)`, then it returns the matching row, or falls back to English (logging a warning) if the requested language's row is missing.
 Technical notes: `t()` helper in `/server/lib/content.js`.
+Status: `content_strings` schema + `t()` helper implemented in `server/lib/content.ts`, with English fallback; grep-verified zero hardcoded user-facing strings in `conversation.ts`.
 Dependencies: INF-2.
 DoD: Zero hardcoded user-facing strings remain in handler code (verified by grep) once INF/TRI/HR/DIR are wired.
 
-**LANG-2 — English content, all keys**
+- [ ] **LANG-2 — English content, all keys**
 Story: As the content lead, I want every key populated in English first.
 Priority: **Must**
 AC: Given the full list of keys referenced in code, when diffed against `content_strings WHERE language='en'`, then zero are missing.
+Status: English content now also covers every Sprint 2 key from conversation-design.md §14 (HR-1/HR-3/HR-4/DIR-2/DIR-3/PW-1, plus the 4th-menu-option additions), copied verbatim in `content_en.ts`, plus 4 small Backend-authored UI-chrome keys (`common.btn_yes`/`common.btn_no`/`dir.region_button`/`dir.region_section_title`) flagged loudly in that file and in `conversation.ts` as NOT Designer copy (see the implementation report's deviations section). No formal diff-script run yet (that tooling doesn't exist) — spot-checked by hand that every `t(...)` call site in `conversation.ts` has a matching seeded key.
 Dependencies: LANG-1 + every story introducing a new key (ongoing, not one-time).
 DoD: Diff script returns zero missing keys, run before Sprint 3.
 
-**LANG-3 — Swahili, FULL tier**
+- [ ] **LANG-3 — Swahili, FULL tier**
 Story: As a Kenyan survivor, I want the entire experience in Swahili.
 Priority: **Must**
 AC: Given LANG-2 is complete, when Swahili translation finishes, then every key has a `language='sw'` row, `tier='FULL'`, `reviewed_by` set to the @KEN/@UGA volunteer's name, `reviewed_at` set.
 Technical notes: AI-drafted first pass, human-reviewed per the committed standard — reviewer identity recorded, not just a boolean.
+Status: Story itself not started (still needs a secured @KEN/@UGA reviewer and full-parity translation) — but the safety-critical subset's DRAFT groundwork now exists: `server/seeds/content_sw.ts` seeds Designer's AI-drafted `highrisk.*` + `pw.consent_prompt` keys (conversation-design.md §15.1) verbatim, correctly as `tier='PARTIAL'` with `reviewed_by`/`reviewed_at` left NULL, per Designer's explicit instruction not to mark these FULL/reviewed until a real reviewer signs off. Do not mistake this seed's existence for LANG-3 being done — it deliberately isn't.
 Dependencies: LANG-2, secured reviewer.
 DoD: Full parity confirmed by the same diff script as LANG-2; reviewer sign-off recorded.
 
-**LANG-4 — French, FULL tier (safety-critical subset first)**
+- [ ] **LANG-4 — French, FULL tier (safety-critical subset first)**
 Story: As the francophone-market proof point, I want the triage+safety-plan strings translated and reviewed by Nnouka first, then the rest.
 Priority: **Must** (triage+safety-plan subset) / **Should** (full menu+directory parity)
 AC: Given the ~35–40 triage+safety-plan keys, when reviewed by Nnouka, then `language='fr'`, `tier='FULL'`, `reviewed_by='Nnouka'` rows exist for all of them by Day 5. Given time remains, full parity follows the same process as LANG-3.
+Status: Story itself not started (Nnouka's actual review hasn't happened) — same draft-groundwork caveat as LANG-3: `server/seeds/content_fr.ts` seeds the same key subset from conversation-design.md §15.2 verbatim, `tier='PARTIAL'`, `reviewed_by`/`reviewed_at` left NULL exactly as that section instructs ("do not mark reviewed_by='Nnouka' in the seed until he has actually reviewed it"). Nnouka's real review is what would close this story, not this seed.
 Dependencies: LANG-2.
 DoD: At minimum, the safety-critical subset passes the diff check and is reviewer-signed; full parity is a stretch within the same story.
 
-**LANG-5 — Arabic, conditional PARTIAL**
+- [ ] **LANG-5 — Arabic, conditional PARTIAL**
 Story: As a stretch goal, I want the safety-critical subset in Arabic with RTL verified, if @EGY produces a reviewer.
 Priority: **Could**
 AC: Given a reviewer responds by Day 6, then the same subset as LANG-4's Must scope exists for `language='ar'`, `tier='PARTIAL'`, and manual check confirms correct RTL rendering in WhatsApp. Given no reviewer by Day 6, then it's not built, and the deck lists it as "planned, not yet reviewed."
+Status: Conditional — not started; depends on an @EGY reviewer responding by Day 6.
 Dependencies: LANG-2, uncertain external reviewer.
 DoD: Either a reviewed PARTIAL subset exists, or the story is explicitly closed as "not attempted, no reviewer" — half-done is not an acceptable close.
 
-**LANG-6 — Kinyarwanda, conditional architecture-only/PARTIAL**
+- [ ] **LANG-6 — Kinyarwanda, conditional architecture-only/PARTIAL**
 Story: As a stretch goal, I want 1–2 proof screens in Kinyarwanda, upgradeable if Nnouka's Kigali network produces a reviewer.
 Priority: **Could**
 AC: Given no reviewer, then an AI-drafted, explicitly unreviewed 3–5 key set exists for `language='rw'`, `tier='ARCHITECTURE_ONLY'`, never surfaced in the live demo. Given a reviewer is found, upgrade as LANG-5.
+Status: Conditional — not started; depends on a reviewer from Nnouka's Kigali network.
 Dependencies: LANG-2.
 DoD: At least the architecture-only minimum renders correctly with an accurate tier label.
 
-**LANG-7 — Shona/Ndebele, architecture-only carry-forward**
+- [ ] **LANG-7 — Shona/Ndebele, architecture-only carry-forward**
 Story: As proof of prior work, I want the existing Shona strings wired into the same schema, so the coverage map is accurate.
 Priority: **Could**
 AC: Given prior content, when migrated with `tier='ARCHITECTURE_ONLY'`, then the 1–2 proof screens render correctly, clearly outside the live Kenya demo.
+Status: Not started — carry-forward from prior Shona/Ndebele work, not yet migrated into this schema.
 Dependencies: LANG-1.
 DoD: Renders without error; not referenced in the default Kenya-pilot flow.
 
@@ -378,31 +419,35 @@ DoD: Renders without error; not referenced in the default Kenya-pilot flow.
 
 ### EPIC: QA — Testing & QA
 
-**QA-1 — Unit test coverage for scoring + hashing**
+- [ ] **QA-1 — Unit test coverage for scoring + hashing**
 Story: As a developer, I want CI to run TRI-2's and SEC-1's tests on every push, so safety-critical logic can't silently break.
 Priority: **Must**
 AC: Given a push, then both suites run and must pass before Day 8 sign-off (full CI gating is a bonus, not required).
+Status: Test suites exist and their assertions pass under manual verification in this dev environment (`npm install` is blocked here — see `docs/ai-tool-usage-log.md`); a real `npm test` run and CI wiring are still pending. As of the Sprint 2 integration pass, verification got meaningfully stronger than "read the code": a real `tsc --noEmit`-equivalent check now runs against every `.ts` file in the repo (via a hand-built ambient-types shim, since `@types/*` packages aren't installable either) and genuinely caught a real bug (a duplicate `menu.body` key in `content_en.ts`) before it reached anyone — see Section 4's Sprint 2 status note for the full account. That's real compiler verification, not just assertion-by-reading, even though it isn't yet the project's own `npm run typecheck` running on a machine with real `node_modules`.
 Dependencies: TRI-2, SEC-1.
 DoD: Suites green; run instructions in README.
 
-**QA-2 — End-to-end language-path test script**
+- [ ] **QA-2 — End-to-end language-path test script**
 Story: As QA owner, I want a written script covering English, Swahili, French journeys.
 Priority: **Must**
 AC: Given the script (`/docs/qa-script.md`), when run per language, then: language selection, all 3 menu paths, one HIGH and one STANDARD journey, and all 4 HR actions (safety plan, real SMS received, connect logged, trusted-contact alert if registered) all verified.
+Status: Not started — Sprint 3 (blocked on Sprint 2 HR/DIR/LANG-3/4 stories).
 Dependencies: all Must-priority TRI/HR/DIR/LANG-3/4 stories.
 DoD: Signed off by Day 8; failures logged and fixed or explicitly deferred with reasoning.
 
-**QA-3 — Pattern Watch + dashboard verification**
+- [ ] **QA-3 — Pattern Watch + dashboard verification**
 Story: As QA, I want to confirm PW/DASH render correctly with seeded data before the demo.
 Priority: **Must**
 AC: Given PW-3's seed, then DASH-2/3/4 all render with no console errors.
+Status: Not started — Sprint 3 (blocked on PW-3/DASH-2/3/4).
 Dependencies: PW-3, DASH-2/3/4.
 DoD: Screenshot-verified checklist item, signed off by Day 8.
 
-**QA-4 — Privacy audit**
+- [ ] **QA-4 — Privacy audit**
 Story: As product owner, I want a direct DB inspection confirming privacy guarantees hold in practice, not just in intent.
 Priority: **Must**
 AC: Given the full Day-8 database, when every table is inspected, then no row contains a raw perpetrator string or a legal name field.
+Status: Not started — Sprint 3.
 Dependencies: SEC-1, SEC-2, PW-1, all Sprint 2 stories.
 DoD: Signed checklist with query output saved as evidence, referenced in the written summary.
 
@@ -410,30 +455,34 @@ DoD: Signed checklist with query output saved as evidence, referenced in the wri
 
 ### EPIC: SUB — Submission Deliverables
 
-**SUB-1 — Demo video**
+- [ ] **SUB-1 — Demo video**
 Story: As the team, I want a recorded demo following the finalized script (English+Swahili full journey, French safety-plan cutaway, Standard-path lookup, Pattern Watch cutaway), so judges see a real product.
 Priority: **Must**
 AC: Real WhatsApp screens, a real SMS arriving, the real dashboard — no slides pretending to be the product.
+Status: Not started — Sprint 3.
 Dependencies: QA-2, QA-3.
 DoD: Final file produced within the hackathon's length limit, reviewed by both team members.
 
-**SUB-2 — Pitch deck**
+- [ ] **SUB-2 — Pitch deck**
 Story: As the team, I want a deck covering problem/users/solution/impact, the honest language-tier map, the team-credibility paragraph, and the Phase 2 roadmap.
 Priority: **Must**
 AC: Includes Kenya-specific stats (220 femicides 2025, 129 in Q1, government stopped publishing after March 2025), the risk-triage mechanism, the tiered coverage map, the Tendai+Nnouka team paragraph, and an honest Cameroon/Rwanda Phase-2 slide.
+Status: Not started as a deliverable file; underlying content (Kenya stats, tier map, team-credibility paragraph) already agreed and captured in `docs/mvp-spec.md`.
 Dependencies: none blocking; content already locked in this conversation.
 DoD: Finalized, proofread, exported.
 
-**SUB-3 — Written summary**
+- [ ] **SUB-3 — Written summary**
 Story: As the team, I want the required written summary covering track, sources, trust approach, AI tool usage.
 Priority: **Must**
 AC: Cites real sources (Böll Foundation, Africa Uncensored/Africa Data Hub, UN Women, HAK/1195), discloses every language's tier honestly, and describes the actual AI-tool workflow (TDD for scoring/hashing, bot scaffolding, translation-drafting with mandatory human review) — see `ai-tool-usage-log.md` for the full record this section draws from.
+Status: Not started as a final document; the actual AI-tool workflow it needs to describe is being kept current in `docs/ai-tool-usage-log.md`.
 Dependencies: none blocking.
 DoD: Matches the actual build — no claimed feature that wasn't really shipped.
 
-**SUB-4 — GitHub README**
+- [ ] **SUB-4 — GitHub README**
 Story: As an outside reviewer, I want a clear README so I can understand and run the project unaided.
 Priority: **Must**
 AC: Includes project description, architecture summary, setup instructions (env vars, migrations, local run), the language-tier table, and an explicit "real vs. simulated" section (counsellor connect is a demo SMS, not a live HAK integration; WhatsApp number used directly, no masked relay; rights content is unreviewed example text).
+Status: In progress — `README.md` now covers setup/architecture/env vars; still needs the explicit "real vs. simulated" section and language-tier table called out by this story's AC.
 Dependencies: effectively all build stories.
 DoD: The non-developer team member can clone and run it locally using only the README.
