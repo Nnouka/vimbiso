@@ -52,6 +52,9 @@ Root `.env` needs (see the comments in `.env.example` for exactly where each val
 | `DATABASE_URL` | Postgres connection string. |
 | `PERPETRATOR_HASH_SECRET` | A long random secret (`openssl rand -hex 32`) — salts the hash used for Pattern Watch. Never reuse this across environments. |
 | `ONCALL_COUNSELLOR_PHONE` | E.164-format phone number the real Twilio SMS alert fires to when a report scores HIGH. |
+| `MESSAGE_LOG_HASH_SECRET` | A long random secret (`openssl rand -hex 32`), separate from `PERPETRATOR_HASH_SECRET` — the message-audit log's (LOG-1) one-way sender pseudonym. |
+| `MESSAGE_LOG_ENCRYPTION_KEY` | A long random secret (`openssl rand -hex 32`) — reversible encryption for logged message content (LOG-1/LOG-2), so the dev-only console mirror can read it back. |
+| `SENDER_IDENTITY_RECOVERY_KEY` | **Do not set this in `.env`.** The only key that can turn a logged sender pseudonym back into a real number (LOG-3) — see `.env.example`'s comment and `server/scripts/recoverSenderIdentity.ts`. It's supplied only at the moment that script is deliberately, manually run, never stored in normal app config. |
 | `PORT` | Defaults to `3000`. |
 
 Dashboard `.env` (`dashboard/.env`) needs `PORT` (defaults to `3001`, deliberately different from the root app so both can run at once) and `SESSION_SECRET`. It will also read `DATABASE_URL` once DASH-1 wires up real authentication (Sprint 2) — set it now to the same value as the root app's if you want to be ready.
@@ -146,6 +149,44 @@ If you don't want to install Postgres locally, both Supabase and Render offer a 
 └── CONTRIBUTING.md            # branching, PR, and review workflow — read this before opening a PR
 ```
 
+## Privacy
+
+Vimbiso is built so that a data breach or a subpoena of this database cannot expose a survivor's abuser. In practice:
+
+- **No legal-name field exists anywhere.** `reports` and `trusted_contacts` have no `name`, `legal_name`, or `id_number` column — confirmed by direct schema inspection (`\d reports`, `\d trusted_contacts`) as part of Sprint 3's live database audit (see `docs/qa-sprint3-report.md`).
+- **A perpetrator is never named in text, only matched by a salted hash.** `perpetrator_hashes` stores only `hash_value` (HMAC-SHA256, secret in `PERPETRATOR_HASH_SECRET`) and `algorithm` — never the raw identifier text. Sprint 3's audit ran a live query for the literal test identifier across every text/jsonb column in every table and found zero matches outside the one hash column that's supposed to hold its hash.
+- **Every cross-report and outbound action is consent-gated, and the gate is enforced in the schema's own data, not just in the code that writes it.** `reports.perpetrator_consent_given` and `reports.wants_counsellor_connect` default to `false`; live data confirms no `perpetrator_hashes` row exists for any report where consent is `false`, and no `sms_alerts` row exists for any report where `wants_counsellor_connect` is `false`.
+- **A phone number is never shown in full on a shared screen.** The counsellor dashboard's reports queue masks `whatsapp_number` to its last 4 digits (`•••• 0001`) before rendering — this isn't in SEC-2's original AC, but is a judgment call carried through Sprint 2 and confirmed against real data in Sprint 3.
+- **An SMS alert to the on-call counsellor never carries the survivor's number or name** — only `report_id`, `risk_level`, and a timestamp (see `sms.ts`'s `alertOnCallCounsellor`, and `sms_alerts`'s own schema, which has no `body` column — the message text itself is never persisted).
+- **A one-time transit-privacy disclosure** ("This chat runs over WhatsApp... consider deleting this chat afterward") fires once per new conversation before any menu shows, tracked via `conversation_state.disclosure_shown` — confirmed firing exactly once for every number exercised in Sprint 3's live-database pass.
+
+What this PoC does **not** do: end-to-end encrypt beyond what WhatsApp/Twilio itself provides, run on infrastructure audited by a third party, or promise that Twilio/WhatsApp/your hosting provider can't see that a conversation happened — the disclosure above says this to the user directly rather than overclaiming.
+
+## Language coverage
+
+Every user-facing string is served from `content_strings`, keyed by `(key, language)`, with an explicit `tier` column (`FULL` / `PARTIAL` / `ARCHITECTURE_ONLY`) so a language is never silently presented as more complete than it is. `server/lib/content.ts` falls back to English (logging the fallback) whenever a key is missing for the selected language — verified live in Sprint 3 (a full Swahili HIGH-risk journey correctly used the real Swahili safety-plan text for every `highrisk.*`/`pw.consent_prompt` key, while every menu/triage string it hit honestly fell back to English rather than showing anything untranslated or broken).
+
+| Language | Tier | Keys seeded | What's actually covered |
+|---|---|---|---|
+| English (`en`) | `FULL` | 87 | Every user-facing string in the product. |
+| Swahili (`sw`) | `PARTIAL`, unreviewed | 11 | Only the safety-critical HR-1 sequence (`highrisk.intro`, `highrisk.plan_1..4`, `highrisk.hotline_prefix`, `highrisk.connect_prompt`, `highrisk.connect_yes_ack`, `highrisk.connect_no_ack`, `highrisk.bridge`) and the PW-1 consent prompt. Everything else (menu, triage questions, rights content) falls back to English for a Swahili-selecting user. AI-drafted; not yet reviewed by a fluent speaker — do not treat this as verified-accurate translation. |
+| French (`fr`) | `PARTIAL`, unreviewed | 11 | Same safety-critical subset as Swahili, same caveats. Nnouka (fluent French speaker, this project's own team) has offered to review this subset personally — that review has not happened yet as of Sprint 3. |
+
+Counts above are the actual row counts in a freshly migrated-and-seeded database (`SELECT language, tier, count(*) FROM content_strings GROUP BY language, tier`), not a plan or an estimate.
+
+## Real vs. simulated
+
+Built for a hackathon, in a sandboxed dev environment with no outbound access to Twilio's API and no `npm install` (registry blocked) until a real deployment happens. Sprint 3 added genuine local-Postgres verification (see `docs/qa-sprint3-report.md`) that goes well beyond reading the code, but several things remain simulated and this section says exactly which:
+
+- **The on-call counsellor SMS alert (HR-2) is real code, verified against a real database, but has never sent a real SMS.** `alertOnCallCounsellor` and the `sms_alerts` write path have been exercised end-to-end against live Postgres with a capturing (never-network) Twilio stand-in; an actual SMS arriving on a real phone, via a real Twilio account, has not happened and is HR-2's explicit remaining DoD item.
+- **No live Twilio WhatsApp Sandbox round-trip has happened.** Every conversation flow in this README and in `docs/qa-sprint3-report.md` was driven by calling `handleIncomingMessage` directly with synthetic messages — the real code path a Twilio webhook would call — not by an actual WhatsApp message arriving over the network.
+- **The counsellor dashboard's actual Express/EJS rendering has not been run or screenshotted.** No real `express`/`ejs` packages are installable in this sandbox. What Sprint 3 verified instead: the dashboard's exact SQL query strings (copy-pasted from `dashboard/server.ts`, not paraphrased) were run directly against the real, now-exercised database and produce the correct rows, ordering, and masking DASH-2/3/4 depend on — see `docs/qa-sprint3-report.md` for the literal query output. That's real evidence about the queries; it is not a screenshot of the rendered page.
+- **The counsellor-connect "on-call counsellor" is a single demo phone number (`ONCALL_COUNSELLOR_PHONE`), not a live integration with HAK/1195 or any real Kenyan GBV organization.** No such integration exists or has been discussed with a real organization.
+- **The WhatsApp number a survivor messages from is used directly as their identifier** (`reports.whatsapp_number`, masked only when *displayed* on the dashboard) — there's no masked-relay-number layer between a survivor's real WhatsApp number and this system, beyond what Twilio/WhatsApp themselves provide.
+- **"Know your rights" content is explicitly unreviewed** — every message it sends is prefixed, verbatim, with "This is example information and has not yet been reviewed by a legal partner," and that's true: no lawyer or legal-aid partner has reviewed it.
+- **Directory entries' phone numbers/URLs have not been called or clicked to confirm they're live** — `docs/backlog.md`'s DIR-1 entry is explicit that this is still a human task, not something any AI agent building this could do without real internet access.
+- **Swahili and French are `PARTIAL` tier, AI-drafted, and unreviewed** — see [Language coverage](#language-coverage) above.
+
 ## Where to read more
 
 - `docs/backlog.md` — the complete Epics/Sprints/User Stories backlog this was built against, including the exact triage questions and scoring rules.
@@ -155,4 +196,6 @@ If you don't want to install Postgres locally, both Supabase and Render offer a 
 - `docs/twilio-setup.md` — step-by-step Twilio Sandbox + ngrok setup.
 - `docs/sprint-1-plan.md` — Sprint 1's role assignments and interface contracts (still the default area split for later sprints).
 - `docs/ai-tool-usage-log.md` — a running record of how AI tools were used to build this, kept for the hackathon's written-summary requirement.
+- `docs/qa-script.md` — the language-path test script (QA-2) and its real results.
+- `docs/qa-sprint3-report.md` — Sprint 3's QA sign-off: real Postgres-backed verification of the dashboard queries and a full privacy audit, with query output as evidence.
 - `CONTRIBUTING.md` — branching, PR, and code review workflow.

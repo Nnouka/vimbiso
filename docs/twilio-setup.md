@@ -111,6 +111,7 @@ Twilio needs a **public** HTTPS URL to send webhooks to — it cannot reach
    ngrok URL followed by the webhook path this repo uses:
    ```
    https://abcd-1234.ngrok-free.app/webhook/whatsapp
+   https://palatable-plenty-mossy.ngrok-free.dev/webhook/whatsapp
    ```
 3. Make sure the method dropdown next to that field is set to **HTTP POST**
    (Twilio's WhatsApp webhook is a POST; the route in

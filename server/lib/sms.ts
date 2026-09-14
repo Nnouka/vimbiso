@@ -20,6 +20,14 @@
 
 import twilio from 'twilio';
 
+import { query } from './db';
+
+// LOG-1 (docs/backlog.md): logs every outbound message for data analysis,
+// sender-pseudonymized at rest. See server/lib/messageLog.ts for the full
+// design. Fire-and-forget — logMessage() never throws (see its own header)
+// and must never delay or block a real send.
+import { logMessage } from './messageLog';
+
 // See the equivalent, longer comment in whatsapp.ts for why this return type
 // is derived structurally via ReturnType<> rather than importing a Twilio
 // instance-type name directly: not verified against the installed @types in
@@ -62,7 +70,24 @@ export async function sendSms(to: string, body: string): SendSmsResult {
   const client = getClient();
   const from = requireEnv('TWILIO_SMS_FROM');
 
-  return client.messages.create({ from, to, body });
+  const result = await client.messages.create({ from, to, body });
+
+  // Logged here, the one chokepoint every SMS send passes through (both
+  // alertOnCallCounsellor() and alertOnCallCounsellors() below call this
+  // function) — the counsellor's own phone is pseudonymized at rest exactly
+  // like a survivor's would be, and the body logged here is already
+  // PII-free by HR-2's own safety-critical constraint (report_id/risk_level/
+  // timestamp only — see alertOnCallCounsellor()'s comment below).
+  void logMessage({
+    direction: 'outbound',
+    channel: 'sms',
+    rawNumber: to,
+    messageType: 'sent_sms',
+    buttonId: null,
+    body,
+  });
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,4 +137,79 @@ export async function alertOnCallCounsellor(
 
   const result = await sendSms(to, body);
   return { sid: result.sid };
+}
+
+// ---------------------------------------------------------------------------
+// alertOnCallCounsellors (plural) — HR-5
+// ---------------------------------------------------------------------------
+//
+// Supersedes alertOnCallCounsellor() above as conversation.ts's HR-2 call
+// site (see conversation.ts's handleConnectResponse), closing a real gap
+// found during live Twilio testing: counsellor_users.phone_number_for_sms
+// has existed since Sprint 1's schema but nothing ever read or wrote it —
+// the SMS alert was hardcoded to a single ONCALL_COUNSELLOR_PHONE env var
+// with no way for a counsellor to register their own number. See
+// docs/backlog.md's HR-5 for the full story.
+//
+// alertOnCallCounsellor() (singular) is kept, unmodified and still exported,
+// rather than deleted or changed — per CONTRIBUTING.md's "flag it, don't
+// silently change a frozen contract" rule, since Sprint 2 froze its
+// signature in docs/sprint-2-plan.md §3.2. It's simply no longer called from
+// conversation.ts.
+
+export interface CounsellorAlertResult {
+  phone: string;
+  sid: string | null;
+  status: 'sent' | 'failed';
+}
+
+/**
+ * Sends the on-call counsellor SMS alert for HR-2 to every counsellor who
+ * has marked themselves on-call AND has a phone number on file
+ * (counsellor_users.is_on_call = true AND phone_number_for_sms IS NOT NULL).
+ *
+ * Falls back to the single ONCALL_COUNSELLOR_PHONE env var (the original
+ * Sprint 2 behavior) ONLY if zero counsellors are currently configured as
+ * on-call — this keeps a fresh checkout / the demo seed working with zero
+ * dashboard setup, while a real on-call counsellor who registers their own
+ * number takes over from the env var automatically, with no code change.
+ *
+ * Never throws for an individual counsellor's send failure — each recipient
+ * is attempted independently so one bad number doesn't suppress the alert
+ * to everyone else on-call. The caller (conversation.ts) writes one
+ * sms_alerts row per result, exactly as it already does for the singular
+ * function, so a failed send to any one recipient stays visible for audit.
+ *
+ * !!! SAFETY-CRITICAL — see alertOnCallCounsellor()'s comment above; the
+ * same "report_id/risk_level/timestamp only, never survivor PII" rule
+ * applies to the body built here.
+ */
+export async function alertOnCallCounsellors(
+  reportId: number,
+  riskLevel: 'HIGH' | 'STANDARD'
+): Promise<CounsellorAlertResult[]> {
+  const timestamp = new Date().toISOString();
+  const body = `Vimbiso alert: report #${reportId}, risk=${riskLevel}, ${timestamp}`;
+
+  const { rows } = await query<{ phone_number_for_sms: string }>(
+    `SELECT phone_number_for_sms FROM counsellor_users
+     WHERE is_on_call = true AND phone_number_for_sms IS NOT NULL`
+  );
+
+  const recipients: string[] =
+    rows.length > 0
+      ? rows.map((r) => r.phone_number_for_sms)
+      : [requireEnv('ONCALL_COUNSELLOR_PHONE')]; // fallback — see comment above
+
+  const results: CounsellorAlertResult[] = [];
+  for (const phone of recipients) {
+    try {
+      const result = await sendSms(phone, body);
+      results.push({ phone, sid: result.sid, status: 'sent' });
+    } catch (err) {
+      console.error(`sms.ts: alertOnCallCounsellors failed to reach ${phone}:`, err);
+      results.push({ phone, sid: null, status: 'failed' });
+    }
+  }
+  return results;
 }

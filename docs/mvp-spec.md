@@ -53,6 +53,7 @@ Reasoning:
   - **Kenya Police Gender and Children's Desks** — nearest-desk lookup by county/region picker (Nairobi, Mombasa, Kisumu, National), not geolocation.
   - Remaining 3–5 entries to a full 5–8-entry directory get their own fresh Day-1 sourcing/verification pass — no shortcuts, since that verification step is the product's actual trust promise.
 - Pattern Watch: consent-gated optional perpetrator-identifier field, salted-hash matching logic, a working match demo on 2–3 seeded test reports, surfaced only in the dashboard's separate tab — framed explicitly as "counting what the state stopped counting" after Kenya's government halted femicide-data publication in March 2025.
+- Pseudonymous message-analysis logging (`message_log`) on every real inbound/outbound send, with a separate, custodian-held key for lawful re-identification (a court order, a government request, or a survivor's own request for their own data) via a standalone, never-imported recovery script, plus a dev-only console mirror — built and verified against a real database; see `docs/backlog.md`'s LOG epic and `docs/data-model.md`. Retention period and the real-world key-custody policy remain explicitly open, undecided questions, not implementation gaps.
 
 ### OUT — cut, or described-only in the pitch deck as production roadmap
 - USSD / feature-phone channel — dropped from the build; shown as a wireframe in the deck, framed around Kenya's offline ~60%, rural, and lower-income households rather than as the headline differentiator.

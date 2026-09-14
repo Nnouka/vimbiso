@@ -38,6 +38,12 @@ import { verifyWebhookSignature } from '../lib/whatsapp';
 // needed on this end.
 import { handleIncomingMessage } from '../lib/conversation';
 
+// LOG-1 (docs/backlog.md): logs every inbound/outbound message for data
+// analysis, sender-pseudonymized at rest. See server/lib/messageLog.ts for
+// the full design (why sender ids are hashed, not encrypted, and how lawful
+// re-identification still works via a separate mechanism).
+import { logMessage, type MessageType } from '../lib/messageLog';
+
 /** The frozen normalized-message shape passed to handleIncomingMessage(). */
 interface NormalizedMessage {
   from: string | null;
@@ -51,6 +57,47 @@ interface TwilioInboundWebhookBody {
   From?: string;
   Body?: string;
   ButtonPayload?: string;
+  ButtonText?: string;
+  ButtonType?: string;
+  InteractiveData?: string;
+}
+
+// Real bug found during live Twilio Sandbox testing (2026-09-14): a survivor
+// tapping a language in sendLanguageSelector's LIST message got re-shown the
+// same selector forever instead of advancing — this file's own header
+// comment had flagged exactly this as "the single highest-risk assumption
+// in this file," never verified against a real payload because no Twilio
+// account existed until now. `ButtonPayload` is confirmed (Twilio's public
+// messaging-webhook reference) to carry a quick-reply BUTTON tap's id, but
+// is NOT confirmed to also carry a LIST-picker row's id the same way — that
+// doc explicitly says list-specific detail may only be present inside the
+// `InteractiveData` JSON blob instead.
+//
+// Rather than guess a single field name and risk being wrong twice, this
+// tries `ButtonPayload` first (unchanged from before — quick-reply buttons
+// keep working exactly as they did), then falls back to parsing
+// `InteractiveData` for a `list_reply.id` (WhatsApp's own Cloud API shape
+// for a list-row tap) or `button_reply.id` (in case Twilio nests button taps
+// the same way in some payload variants). Never throws on malformed JSON —
+// a parsing failure here must not crash the whole webhook handler.
+function extractButtonId(body: TwilioInboundWebhookBody): string | null {
+  if (body.ButtonPayload) {
+    return body.ButtonPayload;
+  }
+
+  if (body.InteractiveData) {
+    try {
+      const parsed = JSON.parse(body.InteractiveData);
+      const id = parsed?.list_reply?.id ?? parsed?.button_reply?.id;
+      if (typeof id === 'string' && id) {
+        return id;
+      }
+    } catch (err) {
+      console.error('webhook: failed to parse InteractiveData as JSON:', err);
+    }
+  }
+
+  return null;
 }
 
 const router: Router = express.Router();
@@ -86,25 +133,23 @@ router.post('/webhook/whatsapp', async (req: Request, res: Response) => {
   //   From          - e.g. "whatsapp:+254712345678"
   //   Body          - free-text message body; present only if the user
   //                   typed text rather than tapping a button/list row
-  //   ButtonPayload - the developer-defined `id` of whatever the user
-  //                   tapped — this is the SAME field for both a
-  //                   sendButtons() quick-reply tap and a sendList() row
-  //                   tap (Twilio does not use a separate "ListId" field;
-  //                   that name in earlier drafts of this interface was a
-  //                   placeholder, not a real Twilio field)
-  //   ButtonText    - the display text of what was tapped (not surfaced in
-  //                   the normalized shape below — Backend's content.ts
-  //                   already knows the display text for a given
-  //                   buttonId, so this would be redundant)
+  //   ButtonPayload - the developer-defined `id` of a quick-reply BUTTON
+  //                   tap. Confirmed real (Twilio's docs) for that case.
+  //   InteractiveData - raw JSON Twilio passes through for richer
+  //                   interaction types; see extractButtonId() above for
+  //                   why a LIST-picker row's id may live here instead of
+  //                   in ButtonPayload.
   //
-  // NOT VERIFIED against a live payload — no Twilio account exists in this
-  // environment to capture a real inbound webhook yet. Before relying on
-  // this in the integration/smoke-test step, confirm ButtonPayload's exact
-  // behavior for a list-picker row tap specifically (as opposed to a
-  // quick-reply button tap) by inspecting a real captured POST — e.g. via
-  // ngrok's local request inspector at http://127.0.0.1:4040. See
-  // docs/twilio-setup.md. This is the single highest-risk assumption in
-  // this file.
+  // UPDATE 2026-09-14 (live Twilio Sandbox testing, Nnouka): this file's own
+  // prior comment here flagged ButtonPayload-for-list-rows as "the single
+  // highest-risk assumption in this file," never verified against a real
+  // payload. It turned out to matter — live testing showed a survivor
+  // tapping a language in the LIST message got re-shown the same selector
+  // forever (see docs/backlog.md's INF-3 status note). extractButtonId()
+  // above now tries ButtonPayload first, then InteractiveData's
+  // `list_reply.id`, and the diagnostic log below prints the raw fields on
+  // every inbound message so the very next real tap either confirms this
+  // fix or tells us exactly what Twilio actually sent instead.
   //
   // Twilio's standard webhook body carries no field for "when Twilio
   // received the message" (there is no `Timestamp` param), so we stamp
@@ -115,12 +160,50 @@ router.post('/webhook/whatsapp', async (req: Request, res: Response) => {
   // in play), so it's cast to the narrow shape this file actually reads
   // rather than left as `any` past this point.
   const body = req.body as TwilioInboundWebhookBody;
+  const buttonId = extractButtonId(body);
+
+  // Diagnostic logging for the exact bug above — deliberately logs every
+  // interactive-related field EXCEPT `Body`, which can carry a survivor's
+  // free-text disclosure and has no reason to sit in a local terminal's
+  // scrollback. Keep this until a real list-picker tap has been confirmed
+  // working end-to-end; safe to remove after (see docs/backlog.md's INF-3
+  // status note for the tracking story).
+  console.log(
+    `webhook: inbound — ButtonPayload=${JSON.stringify(body.ButtonPayload)} ` +
+      `ButtonText=${JSON.stringify(body.ButtonText)} ButtonType=${JSON.stringify(body.ButtonType)} ` +
+      `InteractiveData=${JSON.stringify(body.InteractiveData)} resolvedButtonId=${JSON.stringify(buttonId)}`
+  );
+
   const normalizedMsg: NormalizedMessage = {
     from: body.From || null,
     body: body.Body || null,
-    buttonId: body.ButtonPayload || null,
+    buttonId,
     timestamp: new Date().toISOString(),
   };
+
+  // LOG-1: log this inbound message for data analysis, before we even
+  // attempt to handle it — the message was genuinely received regardless of
+  // how handleIncomingMessage goes on to process it. messageType mirrors
+  // extractButtonId()'s own precedence (ButtonPayload = a quick-reply BUTTON
+  // tap; a buttonId resolved with no ButtonPayload = a LIST-row tap found
+  // via InteractiveData; otherwise free text). Fire-and-forget: logMessage()
+  // never throws (see its own header) and must never delay or block the
+  // actual reply to the survivor.
+  if (body.From) {
+    const messageType: MessageType = body.ButtonPayload
+      ? 'button_reply'
+      : buttonId
+        ? 'list_reply'
+        : 'text';
+    void logMessage({
+      direction: 'inbound',
+      channel: 'whatsapp',
+      rawNumber: body.From,
+      messageType,
+      buttonId,
+      body: body.Body || null,
+    });
+  }
 
   try {
     // Awaited deliberately. handleIncomingMessage is what actually sends

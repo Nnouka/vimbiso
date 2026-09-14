@@ -29,6 +29,12 @@
 import twilio from 'twilio';
 import type { Request } from 'express';
 
+// LOG-1 (docs/backlog.md): logs every outbound message for data analysis,
+// sender-pseudonymized at rest. See server/lib/messageLog.ts for the full
+// design. Fire-and-forget everywhere below — logMessage() never throws (see
+// its own header) and must never delay or block a real send.
+import { logMessage } from './messageLog';
+
 // ---------------------------------------------------------------------------
 // Exported shapes
 // ---------------------------------------------------------------------------
@@ -130,11 +136,22 @@ export async function sendText(to: string, body: string): SendMessageResult {
   const client = getClient();
   const from = getWhatsappFrom();
 
-  return client.messages.create({
+  const result = await client.messages.create({
     from,
     to: toWhatsappAddress(to),
     body,
   });
+
+  void logMessage({
+    direction: 'outbound',
+    channel: 'whatsapp',
+    rawNumber: to,
+    messageType: 'sent_text',
+    buttonId: null,
+    body,
+  });
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,11 +236,22 @@ export async function sendButtons(
     },
   });
 
-  return client.messages.create({
+  const result = await client.messages.create({
     from,
     to: toWhatsappAddress(to),
     contentSid: content.sid,
   });
+
+  void logMessage({
+    direction: 'outbound',
+    channel: 'whatsapp',
+    rawNumber: to,
+    messageType: 'sent_buttons',
+    buttonId: null,
+    body,
+  });
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -344,11 +372,22 @@ export async function sendList(
     },
   });
 
-  return client.messages.create({
+  const result = await client.messages.create({
     from,
     to: toWhatsappAddress(to),
     contentSid: content.sid,
   });
+
+  void logMessage({
+    direction: 'outbound',
+    channel: 'whatsapp',
+    rawNumber: to,
+    messageType: 'sent_list',
+    buttonId: null,
+    body,
+  });
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------

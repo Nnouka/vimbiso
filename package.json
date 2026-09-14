@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "migrate": "tsx server/migrations/run.ts",
-    "seed": "tsx server/seeds/run_all.ts"
+    "seed": "tsx server/seeds/run_all.ts",
+    "recover-identity": "tsx server/scripts/recoverSenderIdentity.ts"
   },
   "type": "commonjs",
   "dependencies": {

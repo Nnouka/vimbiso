@@ -46,14 +46,23 @@ const TIER: ContentString['tier'] = 'FULL';
 // Keys/text copied verbatim from docs/conversation-design.md §7 (and §4 for
 // the multi-paragraph guidance.device_safety text, which the table itself
 // just points back to).
+// LANG-8 (docs/backlog.md): tasteful emoji added to the low-stakes, purely
+// UI-chrome keys below (greeting, menu labels, yes/no button chrome) so
+// survivors feel a warm, human presence rather than a cold form — NEVER on
+// highrisk.*/pw.*/disclosure_message or any triage/rights/trusted-contact
+// copy, where tone must stay plain and serious. Row/section/button titles
+// below were re-checked against WhatsApp's own character limits (list rows
+// 24 chars, list-open button 20 chars) after adding the emoji — see
+// server/lib/whatsapp.ts's sendList()/sendButtons() validation, and the
+// real crash INF-1 already hit once from a title running over that limit.
 export const CONTENT: Record<string, string> = {
   'lang_select.body':
-    'Welcome. This is Vimbiso, a private safety and support line. Please choose your language to continue.',
+    '👋 Welcome. This is Vimbiso, a private safety and support line. Please choose your language to continue.',
   'lang_select.button': 'Select Language',
-  'lang_select.section_title': 'Choose a language',
-  'lang_select.row_english': 'English',
-  'lang_select.row_kiswahili': 'Kiswahili',
-  'lang_select.row_francais': 'Français',
+  'lang_select.section_title': 'Choose a language 🌐',
+  'lang_select.row_english': 'English 🇬🇧',
+  'lang_select.row_kiswahili': 'Kiswahili 🇰🇪',
+  'lang_select.row_francais': 'Français 🇫🇷',
 
   disclosure_message:
     "This chat runs over WhatsApp. We don't store your name, but WhatsApp and your phone provider can see that this conversation exists. If it's safer for you, consider deleting this chat afterward.",
@@ -66,15 +75,15 @@ export const CONTENT: Record<string, string> = {
   // TypeScript-conversion precedent (see docs/sprint-1-plan.md's note on the
   // conversation.ts/whatsapp.ts bugs TypeScript surfaced) — removed rather
   // than silently letting the later definition win.
-  'menu.footer_hint': 'Tip: send 0 anytime for help keeping this private',
+  'menu.footer_hint': '🔒 Tip: send 0 anytime for help keeping this private',
   'menu.button': 'Choose an option',
-  'menu.section_title': 'Main menu',
+  'menu.section_title': '📋 Main menu',
   'menu.report': 'Report something that happened',
-  'menu.report_row': 'Report what happened',
+  'menu.report_row': '📝 Report what happened',
   'menu.find_help': 'Find help near me',
-  'menu.find_help_row': 'Find help near me',
+  'menu.find_help_row': '📍 Find help near me',
   'menu.rights': 'Know your rights',
-  'menu.rights_row': 'Know your rights',
+  'menu.rights_row': '⚖️ Know your rights',
 
   'guidance.device_safety':
     "A few ways to keep this chat more private on this phone:\n\n" +
@@ -182,7 +191,7 @@ export const CONTENT: Record<string, string> = {
   'menu.body':
     'What would you like to do?\n\n1. Report something that happened\n2. Find help near me\n3. Know your rights\n4. Set up a trusted contact',
   'menu.trusted_contact': 'Set up a trusted contact',
-  'menu.trusted_contact_row': 'Trusted contact',
+  'menu.trusted_contact_row': '🤝 Trusted contact',
 
   // --- DIR-2: "Find Help" region picker -------------------------------------
   'dir.region_prompt': "Which area are you in? I'll find you a real, verified contact nearby.",
@@ -213,8 +222,8 @@ export const CONTENT: Record<string, string> = {
 
   // --- Backend-authored UI-chrome additions, NOT Designer copy — see file
   // header's "Sprint 2 additions beyond Designer's Section 14 table" note. ---
-  'common.btn_yes': 'Yes',
-  'common.btn_no': 'No',
+  'common.btn_yes': 'Yes ✅',
+  'common.btn_no': 'No ❌',
   'dir.region_button': 'Choose an area',
   'dir.region_section_title': 'Choose an area',
 };

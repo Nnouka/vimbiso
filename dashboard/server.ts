@@ -464,6 +464,118 @@ app.get('/dashboard/reports/:id', async (req: Request, res: Response) => {
   });
 });
 
+// --- Counsellor settings (HR-5) --------------------------------------------
+//
+// Closes the real gap reported during live Twilio testing ("counselor
+// cannot add their phone number"): counsellor_users.phone_number_for_sms
+// has existed since Sprint 1 but nothing anywhere read or wrote it, so
+// HR-2's SMS alert was hardcoded to a single ONCALL_COUNSELLOR_PHONE env
+// var. This page lets the logged-in counsellor set their own number and
+// toggle on-call availability; server/lib/sms.ts's alertOnCallCounsellors()
+// (plural) reads is_on_call + phone_number_for_sms from this same table.
+// See docs/backlog.md's HR-5.
+//
+// Same E.164-ish validation as server/lib/conversation.ts's
+// isPlausibleWhatsappNumber() (kept as a local copy rather than a cross-
+// package import — the dashboard is a standalone app with its own
+// package.json/tsconfig, per this file's header comment, so it doesn't
+// import from server/**).
+const PHONE_PATTERN = /^\+[0-9]{7,15}$/;
+
+app.get('/dashboard/settings', async (req: Request, res: Response) => {
+  const counsellorId = req.session.counsellor!.id;
+  let phoneNumber = '';
+  let isOnCall = false;
+
+  try {
+    const result = await query<{ phone_number_for_sms: string | null; is_on_call: boolean }>(
+      `SELECT phone_number_for_sms, is_on_call FROM counsellor_users WHERE id = $1`,
+      [counsellorId]
+    );
+    const row = result.rows[0];
+    if (row) {
+      phoneNumber = row.phone_number_for_sms || '';
+      isOnCall = row.is_on_call;
+    }
+  } catch (err) {
+    console.error('[dashboard] failed to load counsellor settings:', err);
+  }
+
+  res.render('settings', {
+    title: 'Settings',
+    activeNav: 'settings',
+    phoneNumber,
+    isOnCall,
+    error: null,
+    saved: false,
+  });
+});
+
+app.post('/dashboard/settings', async (req: Request, res: Response) => {
+  const counsellorId = req.session.counsellor!.id;
+  const { phone_number: rawPhone, is_on_call } = req.body as {
+    phone_number?: string;
+    is_on_call?: string;
+  };
+  const phoneNumber = (rawPhone || '').trim();
+  const isOnCall = is_on_call === 'on';
+
+  // A counsellor can't be marked on-call with no number to reach them on —
+  // that would silently make alertOnCallCounsellors() skip them (it filters
+  // on phone_number_for_sms IS NOT NULL) while the settings page implied
+  // they were covered. Catch it here instead.
+  if (isOnCall && !PHONE_PATTERN.test(phoneNumber)) {
+    return res.render('settings', {
+      title: 'Settings',
+      activeNav: 'settings',
+      phoneNumber,
+      isOnCall,
+      error:
+        'Enter a valid phone number in international format (e.g. +2547XXXXXXXX) before turning on-call on.',
+      saved: false,
+    });
+  }
+
+  // A number is optional if the counsellor is toggling on-call off, but if
+  // they did type something, it should still be well-formed — don't persist
+  // silently-wrong data just because it's currently unused.
+  if (phoneNumber && !PHONE_PATTERN.test(phoneNumber)) {
+    return res.render('settings', {
+      title: 'Settings',
+      activeNav: 'settings',
+      phoneNumber,
+      isOnCall,
+      error: 'That phone number doesn\'t look valid. Use international format (e.g. +2547XXXXXXXX).',
+      saved: false,
+    });
+  }
+
+  try {
+    await query(
+      `UPDATE counsellor_users SET phone_number_for_sms = $1, is_on_call = $2 WHERE id = $3`,
+      [phoneNumber || null, isOnCall, counsellorId]
+    );
+    res.render('settings', {
+      title: 'Settings',
+      activeNav: 'settings',
+      phoneNumber,
+      isOnCall,
+      error: null,
+      saved: true,
+    });
+  } catch (err) {
+    console.error('[dashboard] failed to save counsellor settings:', err);
+    res.render('settings', {
+      title: 'Settings',
+      activeNav: 'settings',
+      phoneNumber,
+      isOnCall,
+      error: 'Something went wrong saving your settings. Please try again.',
+      saved: false,
+    });
+  }
+});
+
 app.get('/', (req: Request, res: Response) => res.redirect('/dashboard'));
 
 app.listen(PORT, () => {

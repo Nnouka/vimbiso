@@ -93,11 +93,20 @@ carry non-null `name`, `phone`, `source_name`, `source_url`, `last_verified_date
 ### `counsellor_users`
 
 ```
-counsellor_users (id, name, username, password_hash, phone_number_for_sms, role ['counsellor'|'institutional_reviewer'|'admin'])
+counsellor_users (id, name, username, password_hash, phone_number_for_sms, is_on_call boolean default false, role ['counsellor'|'institutional_reviewer'|'admin'])
 ```
 
 Dashboard auth (DASH-1, Sprint 2). `password_hash` is bcrypt per the root
 `package.json`'s existing `bcrypt` dependency.
+
+`is_on_call` — added by migration `011_add_counsellor_on_call.sql` (HR-5,
+Sprint 3.5). `phone_number_for_sms` existed since Sprint 1 but nothing read
+or wrote it until HR-5's dashboard settings page (`/dashboard/settings`)
+let a counsellor set their own number and toggle `is_on_call`.
+`server/lib/sms.ts`'s `alertOnCallCounsellors()` (plural) alerts every row
+with `is_on_call = true AND phone_number_for_sms IS NOT NULL`, falling back
+to the single `ONCALL_COUNSELLOR_PHONE` env var only when zero counsellors
+are configured — so a fresh checkout with no dashboard setup still works.
 
 ### `sms_alerts` — added by HR-2 (Sprint 2)
 
@@ -137,6 +146,82 @@ in-flight buffer — but `triage_answers` remains the durable record any other
 process (dashboard, later) reads. `disclosure_shown` gates SEC-3's one-time
 transit-privacy message. `updated_at` is what the 24h session-reset check
 (INF-3) compares against.
+
+### `message_log` — added by LOG-1 (built and real-DB-verified 2026-09-15)
+
+```
+message_log (
+  id, occurred_at timestamp, direction ['inbound'|'outbound'], channel ['whatsapp'|'sms'],
+  sender_pseudonym, message_type ['text'|'button_reply'|'list_reply'|'sent_text'|'sent_buttons'|'sent_list'|'sent_sms'],
+  button_id null, body_ciphertext bytea null, body_iv bytea null, body_auth_tag bytea null,
+  report_id FK null
+)
+```
+
+A parallel, analysis-only audit trail of every message vimbiso sends or
+receives, added at Nnouka's request for data analysis — it does not replace
+or anonymize `reports.whatsapp_number`/`conversation_state`, which must stay
+real for the product's own alerts and session resume to keep working.
+`sender_pseudonym` is `HMAC-SHA256(whatsapp_number, MESSAGE_LOG_HASH_SECRET)`
+— a secret deliberately SEPARATE from `PERPETRATOR_HASH_SECRET` (SEC-1), so
+recovering one hashed-identifier space never lets anyone correlate into the
+other. It is stable per real number (so one sender's messages group together
+for replay/analysis) but **irreversible by design** — no key this
+application holds can turn a pseudonym back into a phone number; that is
+deliberately a different, separate capability (see `sender_identity_map`
+below), not a property of this column. `body_ciphertext`/`body_iv`/
+`body_auth_tag` hold the message content under AES-256-GCM,
+`MESSAGE_LOG_ENCRYPTION_KEY`, since survivor free-text is exactly the kind of
+content this schema already refuses to store raw elsewhere (see SEC-1/SEC-2).
+`report_id` is a nullable FK for analysis convenience only, never read by
+operational sending logic. Wired at every real send/receive chokepoint
+(`server/routes/webhook.ts` inbound; `server/lib/whatsapp.ts`'s
+`sendText`/`sendButtons`/`sendList` and `server/lib/sms.ts`'s `sendSms`
+outbound) and verified against a real Postgres database: a full HIGH-risk
+survivor journey correctly logged every inbound message type, grouped
+consistently under one pseudonym across inbound and outbound rows, and
+`decryptMessageBody()` round-tripped the exact original plaintext — see
+`backlog.md`'s LOG-1 status for the full evidence. **Open question, not yet
+decided:** retention period — indefinite storage of even
+pseudonymous/encrypted conversation data is a real tradeoff the team should
+decide explicitly.
+
+### `sender_identity_map` / `identity_recovery_log` — added by LOG-3 (built and real-DB-verified 2026-09-15)
+
+```
+sender_identity_map (sender_pseudonym PK, encrypted_real_number bytea, iv bytea, auth_tag bytea, first_seen_at)
+identity_recovery_log (id, sender_pseudonym, recovered_by, recovered_at, legal_basis, case_reference)
+```
+
+Added at Nnouka's follow-up request: sender ids must be anonymous by
+default, but a real phone number must still be lawfully recoverable — a
+court order, a lawful government request, or the survivor's own request for
+their own data — since a one-way hash like `sender_pseudonym` above can
+never satisfy that by itself. `sender_identity_map` holds ONE row per unique
+real sender (not per message, keeping the reversible-PII surface as small as
+possible), with the real number encrypted under a THIRD secret,
+`SENDER_IDENTITY_RECOVERY_KEY`, deliberately distinct from both other keys in
+this schema. The privacy control here is key CUSTODY, not the algorithm:
+this key must never live alongside the app's normal runtime secrets — it is
+held out-of-band by a designated custodian, so no engineer with ordinary
+production access can decrypt this table alone, and no normal application
+code path ever does. `identity_recovery_log` is the append-only record of
+every time the mapping was actually decrypted (who, when, on what legal
+basis) — re-identifying a survivor must never be silent, even when it's
+justified. **Open questions, not yet decided:** who the designated key
+custodian is; what counts as a valid "lawful request"; where the recovery
+key is actually stored (a sealed offline copy, a separate secrets manager,
+or split across multiple custodians) — these remain real, undecided policy
+questions even though the mechanism itself is built. The mechanism is
+`server/scripts/recoverSenderIdentity.ts`, a standalone CLI never imported by
+the running application (no decrypt-on-demand API exists anywhere else in
+the repo). Verified against a real database: it correctly decrypted a real
+sender's real number from a real `sender_identity_map` row, refused loudly
+when the recovery key was missing, and refused (writing nothing) for an
+unknown pseudonym — and every successful recovery wrote a real
+`identity_recovery_log` row. See `backlog.md`'s LOG-3 for the full evidence —
+this is a genuine trust/accountability design point worth surfacing in the
+written summary and pitch deck, not just an implementation detail.
 
 ---
 

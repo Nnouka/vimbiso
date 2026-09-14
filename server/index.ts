@@ -38,7 +38,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import webhookRouter from './routes/webhook';
 import { getPool } from './lib/db';
-import { loadContentCache } from './lib/content';
+import { loadContentCache, assertCriticalContentSeeded } from './lib/content';
 import { runMigrations } from './migrations/run';
 
 /**
@@ -107,6 +107,13 @@ async function start(): Promise<void> {
   try {
     await loadContentCache();
     console.log('[startup] content_strings cache loaded.');
+    // Real bug found during live Twilio Sandbox testing: migrations
+    // auto-run above, but seeding is a separate manual `npm run seed` step —
+    // so a fresh boot can load a successfully-EMPTY cache with no error at
+    // all, and the first real message then fails 3 function calls deep in a
+    // way that's easy to misdiagnose as a WhatsApp API problem. See
+    // content.ts's assertCriticalContentSeeded() for the full story.
+    assertCriticalContentSeeded();
   } catch (err) {
     // Don't crash the whole process over a content-cache load failure (e.g.
     // DB briefly unreachable, or content_strings not seeded yet) — t() falls

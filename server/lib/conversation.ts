@@ -32,7 +32,7 @@ import { query } from './db';
 import { scoreRisk, Answer, TriageAnswers } from './riskScoring';
 import { normalizeAndHash } from './hashing';
 import { recordAndCheckPattern } from './patternMatch';
-import { alertOnCallCounsellor } from './sms';
+import { alertOnCallCounsellors } from './sms';
 
 // ---------------------------------------------------------------------------
 // Shapes handed off from server/routes/webhook.ts and stored in Postgres
@@ -736,31 +736,43 @@ async function handleConnectResponse(
 
   if (buttonId === 'connect_yes') {
     // HR-2 AC: wants_counsellor_connect=true, connect_requested_at set, a
-    // sms_alerts row written, and a real Twilio SMS sent via
-    // alertOnCallCounsellor() — never hand-formatted here (sprint-2-plan.md
+    // sms_alerts row written per recipient, and a real Twilio SMS sent via
+    // alertOnCallCounsellors() — never hand-formatted here (sprint-2-plan.md
     // §3.2: "it does not hand-format the SMS body itself").
+    //
+    // HR-5: this used to call the singular alertOnCallCounsellor() and write
+    // exactly one sms_alerts row against a single hardcoded env-var number.
+    // It now calls the plural alertOnCallCounsellors(), which alerts every
+    // counsellor_users row with is_on_call=true (falling back to the env var
+    // only if none are configured — see sms.ts), and writes one sms_alerts
+    // row per recipient so the audit trail reflects who was actually
+    // notified, not just a single assumed number.
     await query(
       `UPDATE reports SET wants_counsellor_connect = true, connect_requested_at = now() WHERE id = $1`,
       [reportId]
     );
 
-    const sentTo = process.env.ONCALL_COUNSELLOR_PHONE || null;
     try {
-      const { sid } = await alertOnCallCounsellor(reportId, 'HIGH');
-      await query(
-        `INSERT INTO sms_alerts (report_id, sent_to, sent_at, twilio_sid, status)
-         VALUES ($1, $2, now(), $3, 'sent')`,
-        [reportId, sentTo, sid]
-      );
+      const results = await alertOnCallCounsellors(reportId, 'HIGH');
+      for (const result of results) {
+        await query(
+          `INSERT INTO sms_alerts (report_id, sent_to, sent_at, twilio_sid, status)
+           VALUES ($1, $2, now(), $3, $4)`,
+          [reportId, result.phone, result.sid, result.status]
+        );
+      }
     } catch (err) {
-      // A failed SMS send must still be visible in sms_alerts (so a
-      // counsellor auditing the queue can see the alert didn't go out) and
-      // must not prevent the survivor from getting her ack message below.
-      console.error(`conversation.ts: alertOnCallCounsellor failed for report ${reportId}:`, err);
+      // alertOnCallCounsellors() itself only throws for setup-level failures
+      // (e.g. no on-call counsellor AND no ONCALL_COUNSELLOR_PHONE fallback
+      // configured) since per-recipient send failures are caught inside it.
+      // A failure here must still be visible in sms_alerts (so a counsellor
+      // auditing the queue can see the alert didn't go out) and must not
+      // prevent the survivor from getting her ack message below.
+      console.error(`conversation.ts: alertOnCallCounsellors failed for report ${reportId}:`, err);
       await query(
         `INSERT INTO sms_alerts (report_id, sent_to, sent_at, twilio_sid, status)
-         VALUES ($1, $2, now(), NULL, 'failed')`,
-        [reportId, sentTo]
+         VALUES ($1, NULL, now(), NULL, 'failed')`,
+        [reportId]
       );
     }
 

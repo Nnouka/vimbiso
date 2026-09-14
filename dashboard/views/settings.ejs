@@ -1,0 +1,48 @@
+<%- include('partials/header') %>
+
+  <h1>Settings</h1>
+  <p class="page-subtitle">Your on-call phone number — used by HR-2's SMS alert on HIGH-risk reports.</p>
+
+  <% if (error) { %>
+    <p class="form-error" role="alert"><%= error %></p>
+  <% } %>
+
+  <% if (saved) { %>
+    <p class="notice" data-testid="settings-saved">Saved.</p>
+  <% } %>
+
+  <!--
+    HR-5: reads/writes counsellor_users.phone_number_for_sms and is_on_call
+    for the logged-in counsellor — see server.ts's GET/POST
+    /dashboard/settings. alertOnCallCounsellors() (server/lib/sms.ts) alerts
+    every counsellor with is_on_call=true AND a phone number on file, falling
+    back to ONCALL_COUNSELLOR_PHONE only if none are configured.
+  -->
+  <form method="POST" action="/dashboard/settings" novalidate>
+    <div class="form-field">
+      <label for="phone_number">Your phone number (for SMS alerts)</label>
+      <input
+        type="text"
+        id="phone_number"
+        name="phone_number"
+        data-testid="settings-phone"
+        placeholder="+2547XXXXXXXX"
+        value="<%= phoneNumber %>"
+      />
+    </div>
+    <div class="form-field form-field--checkbox">
+      <label for="is_on_call">
+        <input
+          type="checkbox"
+          id="is_on_call"
+          name="is_on_call"
+          data-testid="settings-on-call"
+          <%= isOnCall ? 'checked' : '' %>
+        />
+        I'm on-call — alert me by SMS on HIGH-risk reports
+      </label>
+    </div>
+    <button type="submit" class="btn-primary" data-testid="settings-submit">Save</button>
+  </form>
+
+<%- include('partials/footer') %>
