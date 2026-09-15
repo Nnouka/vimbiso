@@ -133,6 +133,61 @@ const LANGUAGE_BY_ROW_ID: Record<string, string> = {
   lang_fr: 'fr',
 };
 
+// Real bug found during live Twilio Sandbox testing (2026-09-15): a survivor
+// tapping "English" in the language-selector LIST message got re-shown the
+// same selector forever, exactly like the earlier stuck-at-language-select
+// bug INF-3's status note already documents — but this time server/routes/
+// webhook.ts's own diagnostic log (added for that earlier bug) proved it is
+// NOT the same cause. It printed `ButtonPayload=undefined ... InteractiveData
+// =undefined resolvedButtonId=null` — every interactive field genuinely
+// empty — while `Body` was literally `"lang_en"`: the row's own internal id,
+// not its display title ("English") and not anything a survivor would type.
+// The only explanation consistent with that evidence: on the free Twilio
+// WhatsApp Sandbox, this app's `twilio/list-picker` messages (sendList(), in
+// whatsapp.ts — whose own header already flagged this content type as "NOT
+// VERIFIED LIVE... the second-highest-risk area of this file") are not
+// arriving at WhatsApp as genuinely interactive at all; whatever the
+// survivor's client does when "selecting" a row, Twilio's webhook reports it
+// as an ordinary text message whose body happens to be the row's id.
+//
+// Rather than guess further at Sandbox internals with no way to reach a live
+// Twilio account from this build environment, this is handled where it's
+// actually observable and testable: every literal id this file hands to
+// sendButtons()/sendList() as a row/button `id` is collected here once, and
+// handleIncomingMessage() below promotes an inbound plain-text Body that
+// exactly matches one of them to a real buttonId, before any step handler
+// ever sees it — so a genuine button/list tap and a degraded-to-text one are
+// indistinguishable to every step handler in this file. Every id here is an
+// internal, code-only snake_case token no survivor would plausibly type as
+// real free text (their actual free-typed replies — a disclosure, a typed
+// trusted-contact number, a Pattern Watch identifier — go through completely
+// different code paths that never call this function), so this promotion
+// carries effectively zero risk of misreading real survivor text as a tap.
+// This list MUST be kept in sync by hand with every `{ id: '...', ... }`
+// literal below — there is no single source of truth to derive it from
+// automatically, so a new button/list id added anywhere in this file needs
+// adding here too, or it will silently keep this exact bug alive for that
+// one new screen.
+const KNOWN_INTERACTIVE_IDS = new Set<string>([
+  'lang_en',
+  'lang_sw',
+  'lang_fr',
+  'menu_report',
+  'menu_find_help',
+  'menu_rights',
+  'menu_trusted_contact',
+  'triage_yes',
+  'triage_no',
+  'triage_skip',
+  'connect_yes',
+  'connect_no',
+  'region_nairobi',
+  'region_mombasa',
+  'region_other',
+  'pw_consent_yes',
+  'pw_consent_no',
+]);
+
 // sendButtons id -> stored triage_answers.answer value.
 const TRIAGE_ANSWER_BY_BUTTON_ID: Record<string, Answer> = {
   triage_yes: 'YES',
@@ -141,6 +196,52 @@ const TRIAGE_ANSWER_BY_BUTTON_ID: Record<string, Answer> = {
 };
 
 const TRIAGE_STEP_PREFIX = 'TRIAGE_';
+
+// Real feedback from Nnouka (2026-09-15): "not all users may understand
+// that they need to click and select, they may actually just send the
+// number representing the option... the app should understand the option
+// selected too." This is a second, complementary robustness fix to
+// KNOWN_INTERACTIVE_IDS's promotion above — related but distinct. That one
+// promotes a plain-text Body that happens to equal an internal id (a
+// Sandbox-degradation artifact); this one promotes a plain-text Body that is
+// just the 1-indexed POSITION of an option in whatever numbered list this
+// exact step last sent (a survivor typing "1" instead of tapping the first
+// row/button) — a survivor typing a bare digit would never match an internal
+// snake_case id, so KNOWN_INTERACTIVE_IDS's set can't cover this case, and a
+// digit's meaning is inherently relative to the current step (it has to be
+// looked up against the step's own list, never treated as a global id).
+//
+// AWAITING_TRUSTED_CONTACT_NUMBER and AWAITING_PW_IDENTIFIER are
+// deliberately NOT listed below (and numberedOptionsForStep() returns null
+// for both): both expect genuine free-typed text (a phone number, a
+// perpetrator identifier) where a bare digit is very plausibly real survivor
+// input, not a menu choice — silently reinterpreting it as one would corrupt
+// or drop that input, which is far worse than leaving a rare miskeyed menu
+// digit unrecognized.
+const NUMBERED_OPTIONS_BY_STEP: Record<string, string[]> = {
+  AWAITING_LANGUAGE: ['lang_en', 'lang_sw', 'lang_fr'],
+  MAIN_MENU: ['menu_report', 'menu_find_help', 'menu_rights', 'menu_trusted_contact'],
+  AWAITING_CONNECT_RESPONSE: ['connect_yes', 'connect_no'],
+  AWAITING_REGION: ['region_nairobi', 'region_mombasa', 'region_other'],
+  AWAITING_PW_CONSENT: ['pw_consent_yes', 'pw_consent_no'],
+};
+
+// Every TRIAGE_<question> step (see TRIAGE_STEP_PREFIX above) sends the same
+// 3 buttons regardless of which of the 8 questions is being asked, so this
+// is one shared list rather than duplicating it per question key.
+const TRIAGE_NUMBERED_OPTIONS = ['triage_yes', 'triage_no', 'triage_skip'];
+
+/**
+ * Returns the ordered option-id list a survivor was just shown for
+ * `currentStep`, or `null` if that step doesn't present a numbered list at
+ * all — including AWAITING_TRUSTED_CONTACT_NUMBER and AWAITING_PW_IDENTIFIER,
+ * deliberately excluded above, and any other/unknown step.
+ */
+function numberedOptionsForStep(currentStep: string | null): string[] | null {
+  if (!currentStep) return null;
+  if (currentStep.startsWith(TRIAGE_STEP_PREFIX)) return TRIAGE_NUMBERED_OPTIONS;
+  return NUMBERED_OPTIONS_BY_STEP[currentStep] || null;
+}
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // INF-3: 24h inactivity session reset
 
 // Sprint 2 conversation_state.current_step values (INF-3's state machine
@@ -1056,7 +1157,19 @@ async function handleMainMenu(
 // ---------------------------------------------------------------------------
 
 export async function handleIncomingMessage(msg: NormalizedMessage): Promise<void> {
-  const { from, body, buttonId } = msg;
+  const { from } = msg;
+  let { body, buttonId } = msg;
+
+  // See KNOWN_INTERACTIVE_IDS's comment above: promote a plain-text Body
+  // that exactly matches one of this app's own internal button/list ids to
+  // a real buttonId, so a genuine tap and a Sandbox-degraded-to-text one are
+  // handled identically by every step below. Only fires when webhook.ts
+  // didn't already resolve a real buttonId, so it can never override or
+  // conflict with an actual interactive tap.
+  if (!buttonId && body && KNOWN_INTERACTIVE_IDS.has(body.trim())) {
+    buttonId = body.trim();
+    body = null;
+  }
 
   if (!from) {
     console.error('conversation.ts: handleIncomingMessage received a message with no "from"; ignoring.');
@@ -1099,6 +1212,30 @@ export async function handleIncomingMessage(msg: NormalizedMessage): Promise<voi
       disclosure_shown: state ? state.disclosure_shown : false,
     });
     return;
+  }
+
+  // See NUMBERED_OPTIONS_BY_STEP's comment above: promote a bare digit
+  // ("1", "2"...) typed instead of a real tap to the buttonId at that
+  // 1-indexed position in whatever numbered list state.current_step last
+  // sent. Scoped strictly to the CURRENT step (via numberedOptionsForStep(),
+  // never a global lookup) and only fires when buttonId is still null and
+  // body is purely digits, so it can never override a real tap, can never
+  // fire on the two free-text steps numberedOptionsForStep() excludes, and
+  // runs after KNOWN_INTERACTIVE_IDS's own promotion above without
+  // conflicting with it (that one only ever matches non-numeric ids). An
+  // out-of-range number (e.g. "9" at a 4-option menu) is left completely
+  // untouched — body stays exactly as typed and falls through to whichever
+  // step handler runs below, so it gets that step's own existing invalid-
+  // input/re-prompt behavior, same as any other unrecognized text would.
+  if (!buttonId && body && /^\d+$/.test(body.trim())) {
+    const options = numberedOptionsForStep(state.current_step);
+    if (options) {
+      const index = Number(body.trim()) - 1;
+      if (index >= 0 && index < options.length) {
+        buttonId = options[index];
+        body = null;
+      }
+    }
   }
 
   let patch: ConversationStatePatch = {};

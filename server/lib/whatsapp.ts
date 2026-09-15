@@ -226,10 +226,10 @@ export async function sendButtons(
   // types are installed — if that doesn't compile, that's a genuine schema
   // mismatch to resolve against the docs above, not a reason to `as any` it.
   const content: ContentInstance = await client.content.v1.contents.create({
-    friendly_name: `vimbiso_quick_reply_${Date.now()}`,
+    friendlyName: `vimbiso_quick_reply_${Date.now()}`,
     language: 'en',
     types: {
-      'twilio/quick-reply': {
+      'twilioQuickReply': {
         body,
         actions: buttons.map((b) => ({ id: b.id, title: b.title })),
       },
@@ -361,10 +361,10 @@ export async function sendList(
   // relying on it. This is the second-highest-risk area of this file after
   // sendButtons()'s Content API shape.
   const content: ContentInstance = await client.content.v1.contents.create({
-    friendly_name: `vimbiso_list_picker_${Date.now()}`,
+    friendlyName: `vimbiso_list_picker_${Date.now()}`,
     language: 'en',
     types: {
-      'twilio/list-picker': {
+      'twilioListPicker': {
         body,
         button: buttonText,
         items,

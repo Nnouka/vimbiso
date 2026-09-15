@@ -111,7 +111,6 @@ Twilio needs a **public** HTTPS URL to send webhooks to — it cannot reach
    ngrok URL followed by the webhook path this repo uses:
    ```
    https://abcd-1234.ngrok-free.app/webhook/whatsapp
-   https://palatable-plenty-mossy.ngrok-free.dev/webhook/whatsapp
    ```
 3. Make sure the method dropdown next to that field is set to **HTTP POST**
    (Twilio's WhatsApp webhook is a POST; the route in
@@ -168,6 +167,38 @@ supports SMS:
    **Verified Caller IDs**) until you upgrade out of trial. Verify the
    on-call demo counsellor's phone this way before relying on HR-2's real SMS
    alert for a demo.
+
+## 9. Sending SMS internationally (e.g. a Rwanda on-call number)
+
+Confirmed via a real error during live testing (2026-09-15): sending to a
+Rwanda number (`+250...`) failed with error **21408** — "Permission to send
+an SMS has not been enabled for the region indicated by the 'To' number."
+Per Twilio's own documentation (docs.twilio.com/messaging/guides/sms-geo-
+permissions; support.twilio.com's Geo Permissions and "Global SMS on trial
+accounts" articles — check these directly, since Twilio's console UI and
+policies change), this is expected and needs two separate things fixed, not
+just one:
+
+1. **A trial account cannot send SMS outside its signup country at all** —
+   Twilio's trial explicitly restricts SMS/calls to the country you signed
+   up from, regardless of Geo Permissions or verified numbers. **You must
+   upgrade to a paid account first** to send to Rwanda (or any country other
+   than your signup country).
+2. Once on a paid account, **enable Rwanda in Geo Permissions**: Console →
+   **Messaging** → **Settings** → **Geo Permissions** → find Rwanda → enable
+   it. This is separate from, and in addition to, step 8's "Verified Caller
+   IDs" trial restriction above (which no longer applies once you're paid).
+
+**Do not** also try to register an alphanumeric Sender ID for Rwanda for
+this hackathon — Twilio's own Rwanda SMS guidelines
+(twilio.com/en-us/guidelines/rw/sms) say that requires **3 weeks of
+provisioning**, far outside a 10-day build. Sending from your plain Twilio
+long-code number (`TWILIO_SMS_FROM`, no branded sender name) works
+immediately once the two steps above are done — you just won't see a custom
+sender name on the counsellor's phone, which is fine for a demo. Also per
+that same guidelines page: Rwanda does not support **two-way** SMS and
+blocks delivery to landlines — neither matters here, since this app only
+ever sends one-way outbound alerts to a mobile number (HR-2/HR-5).
 
 ---
 
