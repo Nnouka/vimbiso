@@ -198,10 +198,10 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
+app.set('views', path.join(__dirname, '..', 'views'));
 
 app.use(express.urlencoded({ extended: false }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // DASH-1's DoD only requires working login/logout plus a
 // redirect-when-unauthenticated on /dashboard* — the in-memory
