@@ -225,16 +225,29 @@ export async function sendButtons(
   // declared parameter type for `content.v1.contents.create()` once real
   // types are installed — if that doesn't compile, that's a genuine schema
   // mismatch to resolve against the docs above, not a reason to `as any` it.
+  // LIVE FIX (2026-09-16, Render deploy): confirmed against a real Twilio
+  // account — the send above was failing in production with RestException
+  // "Invalid types. At least one content type definition is required"
+  // (error 92001, https://www.twilio.com/docs/errors/92001) using the
+  // installed SDK's own camelCase `Types` property name (`twilioQuickReply`).
+  // Twilio's real Content API only recognizes the hyphenated content-type
+  // identifier ('twilio/quick-reply', matching the public docs this file
+  // already cites above) as a `types` key — the installed twilio package's
+  // content.d.ts declares `Types` with camelCase property names that do NOT
+  // match what the live REST API actually accepts for this field, so the
+  // params object is cast past that mismatch here rather than left to
+  // silently send a `types` key Twilio's server doesn't recognize. See the
+  // matching note above sendList() below for the same issue there.
   const content: ContentInstance = await client.content.v1.contents.create({
     friendlyName: `vimbiso_quick_reply_${Date.now()}`,
     language: 'en',
     types: {
-      'twilioQuickReply': {
+      'twilio/quick-reply': {
         body,
         actions: buttons.map((b) => ({ id: b.id, title: b.title })),
       },
     },
-  });
+  } as Parameters<TwilioClient['content']['v1']['contents']['create']>[0]);
 
   const result = await client.messages.create({
     from,
@@ -360,17 +373,24 @@ export async function sendList(
   // current docs at https://www.twilio.com/docs/content/list-picker before
   // relying on it. This is the second-highest-risk area of this file after
   // sendButtons()'s Content API shape.
+  // LIVE FIX (2026-09-16, Render deploy): same root cause as sendButtons()'s
+  // matching note above, confirmed live in production — every single
+  // conversation starts with this exact call (sendLanguageSelector), so this
+  // one exception was silently swallowing every survivor's first message
+  // (webhook.ts's handler logs and 200s on failure, so Twilio never saw an
+  // error and never retried). Cast past the installed SDK's camelCase
+  // `Types` typing for the same reason as above.
   const content: ContentInstance = await client.content.v1.contents.create({
     friendlyName: `vimbiso_list_picker_${Date.now()}`,
     language: 'en',
     types: {
-      'twilioListPicker': {
+      'twilio/list-picker': {
         body,
         button: buttonText,
         items,
       },
     },
-  });
+  } as Parameters<TwilioClient['content']['v1']['contents']['create']>[0]);
 
   const result = await client.messages.create({
     from,
