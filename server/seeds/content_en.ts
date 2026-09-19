@@ -189,9 +189,16 @@ export const CONTENT: Record<string, string> = {
   // their keys/routing are UNCHANGED from §7 above — only menu.body's VALUE
   // changes, to a 4-line body; see conversation-design.md §13) -------------
   'menu.body':
-    'What would you like to do?\n\n1. Report something that happened\n2. Find help near me\n3. Know your rights\n4. Set up a trusted contact',
+    'What would you like to do?\n\n1. Report something that happened\n2. Find help near me\n3. Know your rights\n4. Set up a trusted contact\n5. Change language',
   'menu.trusted_contact': 'Set up a trusted contact',
   'menu.trusted_contact_row': '🤝 Trusted contact',
+
+  // --- LANG-CHANGE (Sprint 3): main menu's 5th option — see
+  // conversation-design.md §16. Backend-authored, not from Designer's §7/§14
+  // tables (those predate this story) — flagged per CONTRIBUTING.md's
+  // "flag it, don't silently absorb" rule, same as §16 itself documents.
+  'menu.change_language_row': '🌐 Change language',
+  'menu.language_changed_ack': 'Language updated. ✅',
 
   // --- DIR-2: "Find Help" region picker -------------------------------------
   'dir.region_prompt': "Which area are you in? I'll find you a real, verified contact nearby.",

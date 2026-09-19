@@ -30,6 +30,12 @@ Real menu copy (English shown for reference; on-screen will be the Swahili equiv
 
 Tap **"Report something that happened."**
 
+## 2a. Change language (0:25–0:30) — INF-6
+
+Quick cutaway from the main menu: tap the 5th option, "Change language." Same language selector from §1 reappears — tap a different language, and the confirmation + main menu come back in that language.
+
+Narrate: "Picked the wrong language, or need to switch? It's right there in the menu — no new number, nothing lost."
+
 ## 3. Triage — the strangulation question (0:35–0:55)
 
 The bot asks the 8 fixed-order questions one at a time via Yes/No/Prefer-not-to-say buttons. For the demo, answer the first question (STRANGLE) **Yes**, and the remaining 7 **No** — this is the HIGH-risk override path, verified in Sprint 3 to fire correctly in both English and Swahili (Journeys A and E in `docs/qa-script.md`).

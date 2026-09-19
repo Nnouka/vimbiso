@@ -950,3 +950,51 @@ its English string is fixed verbatim by HR-4's AC and the backlog does not
 call for translated variants in Sprint 2 scope — if a translated version is
 ever wanted, that's a new decision for PM/backlog to make explicitly, not
 something to infer from this subset.
+
+---
+
+## 16. Main menu — 5th option: Change language (Sprint 3 addition, INF-6)
+
+Real gap found reviewing the shipped flow: language is picked exactly once,
+at first contact (§1), and nothing anywhere afterward lets a survivor change
+it — not the main menu (§3/§13), not a keyword, nothing. A survivor who taps
+the wrong language under stress, or whose situation changes, is stuck; their
+only "fix" is messaging from a new WhatsApp number, which also loses their
+conversation state. This section documents the fix, additive to §13 (do not
+edit §3/§13 above).
+
+**Updated body text** (`menu.body` gains a 5th line):
+
+> What would you like to do?
+>
+> 1. Report something that happened
+> 2. Find help near me
+> 3. Know your rights
+> 4. Set up a trusted contact
+> 5. Change language
+
+**New row** (added after §13's `menu_trusted_contact` row, same List
+Message, same section):
+
+| Row title | Chars | Row id | Routes to | Content key |
+|---|---|---|---|---|
+| `🌐 Change language` | 18 ✅ | `menu_change_language` | Re-shows the §1 language selector | `menu.change_language_row` |
+
+**Flow:** tapping this row re-sends the exact same language-selector List
+Message §1 defines (`sendLanguageSelector()` — no separate copy, no drift
+risk). Once a language row is tapped, `conversation_state.language` updates,
+a short confirmation is sent **in the newly chosen language**, then the main
+menu re-sends in that language.
+
+**New key:**
+
+`menu.change_language_row` = "🌐 Change language"
+`menu.language_changed_ack` = "Language updated. ✅"
+
+**Safety-critical constraint (do not weaken this in a future edit):** this
+flow must NEVER re-trigger SEC-3's disclosure message (§2), which is
+once-ever per WhatsApp number, not once-per-language-pick. Implementation
+uses a dedicated `AWAITING_LANGUAGE_CHANGE` state distinct from
+`AWAITING_LANGUAGE` specifically so the disclosure's `disclosure_shown` gate
+in §1/§2 is structurally unreachable from this flow, not just skipped by a
+runtime check that a later edit could accidentally remove.

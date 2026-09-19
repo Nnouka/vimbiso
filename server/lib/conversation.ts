@@ -176,6 +176,7 @@ const KNOWN_INTERACTIVE_IDS = new Set<string>([
   'menu_find_help',
   'menu_rights',
   'menu_trusted_contact',
+  'menu_change_language', // LANG-CHANGE (Sprint 3): see §16 of conversation-design.md
   'triage_yes',
   'triage_no',
   'triage_skip',
@@ -220,10 +221,20 @@ const TRIAGE_STEP_PREFIX = 'TRIAGE_';
 // digit unrecognized.
 const NUMBERED_OPTIONS_BY_STEP: Record<string, string[]> = {
   AWAITING_LANGUAGE: ['lang_en', 'lang_sw', 'lang_fr'],
-  MAIN_MENU: ['menu_report', 'menu_find_help', 'menu_rights', 'menu_trusted_contact'],
+  MAIN_MENU: [
+    'menu_report',
+    'menu_find_help',
+    'menu_rights',
+    'menu_trusted_contact',
+    'menu_change_language',
+  ],
   AWAITING_CONNECT_RESPONSE: ['connect_yes', 'connect_no'],
   AWAITING_REGION: ['region_nairobi', 'region_mombasa', 'region_other'],
   AWAITING_PW_CONSENT: ['pw_consent_yes', 'pw_consent_no'],
+  // LANG-CHANGE: same 3 options as AWAITING_LANGUAGE (the digit-shortcut
+  // applies identically whether this is a survivor's very first language
+  // pick or a later change from the main menu).
+  AWAITING_LANGUAGE_CHANGE: ['lang_en', 'lang_sw', 'lang_fr'],
 };
 
 // Every TRIAGE_<question> step (see TRIAGE_STEP_PREFIX above) sends the same
@@ -254,6 +265,12 @@ const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // INF-3: 24h inactivity session res
 //   AWAITING_REGION                 — DIR-2, expects a region_* row tap
 //   AWAITING_PW_CONSENT             — PW-1, expects pw_consent_yes/pw_consent_no
 //   AWAITING_PW_IDENTIFIER          — PW-1, expects free-text identifier
+//   AWAITING_LANGUAGE_CHANGE        — LANG-CHANGE (Sprint 3), expects a
+//                                      lang_en/lang_sw/lang_fr row tap,
+//                                      reached from the main menu's 5th
+//                                      option, distinct from AWAITING_LANGUAGE
+//                                      so the SEC-3 disclosure is never
+//                                      re-shown on a language change
 
 // --- DEVIATION FLAGGED PER CONTRIBUTING.md ("flag it, don't silently
 // absorb") -------------------------------------------------------------
@@ -387,6 +404,12 @@ async function sendMainMenu(to: string, language: string): Promise<void> {
         { id: 'menu_find_help', title: t('menu.find_help_row', language) },
         { id: 'menu_rights', title: t('menu.rights_row', language) },
         { id: 'menu_trusted_contact', title: t('menu.trusted_contact_row', language) },
+        // LANG-CHANGE (Sprint 3, conversation-design.md §16): lets a
+        // survivor who picked the wrong language at AWAITING_LANGUAGE, or
+        // whose situation/reader changes, switch languages later without a
+        // new WhatsApp number (which would also lose their conversation
+        // state). Routed in handleMainMenu() below.
+        { id: 'menu_change_language', title: t('menu.change_language_row', language) },
       ],
     },
   ];
@@ -1100,6 +1123,52 @@ async function handleTrustedContactNumber(
 }
 
 // ---------------------------------------------------------------------------
+// LANG-CHANGE: survivor-initiated language change (Sprint 3), reached from
+// the main menu's 5th option (menu_change_language). See conversation-
+// design.md §16 for the full spec this mirrors.
+//
+// Deliberately a SEPARATE step from AWAITING_LANGUAGE (INF-3's first-contact
+// flow), not a reuse of it, for one safety-critical reason: AWAITING_LANGUAGE's
+// own handling in handleIncomingMessage() fires the SEC-3 disclosure message
+// on first pick ("if (!state.disclosure_shown) ..."). SEC-3's own AC is
+// "exactly once ever per WhatsApp number" — reusing AWAITING_LANGUAGE here
+// would be harmless in the common case (disclosure_shown would already be
+// true) but would silently re-couple two things that must stay independent:
+// a survivor changing their language mid-use must never be able to trigger,
+// or be gated on, the once-ever disclosure flow. A dedicated step keeps that
+// impossible by construction rather than by a flag check someone could
+// later edit away.
+// ---------------------------------------------------------------------------
+
+async function handleLanguageChange(
+  from: string,
+  state: ConversationStateRow,
+  buttonId: string | null
+): Promise<ConversationStatePatch> {
+  const newLanguage = buttonId != null ? LANGUAGE_BY_ROW_ID[buttonId] : undefined;
+
+  if (!newLanguage) {
+    // Typed text or an unrecognized tap — re-ask, same pattern as every
+    // other step handler in this file.
+    await sendLanguageSelector(from);
+    return {};
+  }
+
+  // Confirmation is sent in the NEWLY chosen language (not the old one) —
+  // the survivor just picked it, so this is the first proof-of-life that the
+  // switch worked. Falls back to English per t()'s normal behavior if this
+  // exact key isn't seeded for a PARTIAL-tier language yet (see content_sw.ts
+  // / content_fr.ts's file headers).
+  await sendText(from, t('menu.language_changed_ack', newLanguage));
+  await sendMainMenu(from, newLanguage);
+
+  // disclosure_shown is NOT touched here (omitted from the patch) — it
+  // keeps whatever value it already had, per SEC-3. Only language and
+  // current_step change.
+  return { current_step: 'MAIN_MENU', language: newLanguage, temp_answers: {} };
+}
+
+// ---------------------------------------------------------------------------
 // INF-5: device-safety guidance
 // ---------------------------------------------------------------------------
 
@@ -1145,6 +1214,14 @@ async function handleMainMenu(
     await sendText(from, t('trusted_contact.prompt', language));
     await sendText(from, t('trusted_contact.ask_number', language));
     return { current_step: 'AWAITING_TRUSTED_CONTACT_NUMBER' };
+  }
+
+  if (buttonId === 'menu_change_language') {
+    // LANG-CHANGE (Sprint 3) — 5th main-menu option. Re-shows the same
+    // language selector INF-3 uses on first contact; handleLanguageChange()
+    // above is what actually applies the new language once picked.
+    await sendLanguageSelector(from);
+    return { current_step: 'AWAITING_LANGUAGE_CHANGE' };
   }
 
   // Typed text or an unrecognized tap at the main menu — re-send it.
@@ -1274,6 +1351,9 @@ export async function handleIncomingMessage(msg: NormalizedMessage): Promise<voi
   } else if (state.current_step === 'AWAITING_PW_IDENTIFIER') {
     // PW-1 (free-text identifier)
     patch = await handlePwIdentifier(from, state, body);
+  } else if (state.current_step === 'AWAITING_LANGUAGE_CHANGE') {
+    // LANG-CHANGE (Sprint 3)
+    patch = await handleLanguageChange(from, state, buttonId);
   } else {
     // Unknown/corrupt current_step — recover to the main menu instead of
     // dead-ending silently.
