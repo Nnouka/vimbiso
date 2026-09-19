@@ -1,6 +1,6 @@
 # Vimbiso — Build Backlog (Epics, Sprints, User Stories)
 
-*Prepared with Tendai Moyo — locked against the finalized MVP spec (`vimbiso-mvp-spec.md`): Kenya pilot, WhatsApp-only, risk-triage-first safety mechanism, English/Swahili/French at FULL tier, Arabic/Kinyarwanda conditional, web dashboard + SMS alerting, Pattern Watch demoted to a non-urgent institutional signal.*
+*Prepared under the "Tendai" AI-agent planning role (not a human collaborator — see `docs/ai-tool-usage-log.md`, Phase 1) — locked against the finalized MVP spec (`vimbiso-mvp-spec.md`): Kenya pilot, WhatsApp-only, risk-triage-first safety mechanism, English/Swahili/French at FULL tier, Arabic/Kinyarwanda conditional, web dashboard + SMS alerting, Pattern Watch demoted to a non-urgent institutional signal.*
 
 This document is meant to be handed story-by-story to a developer or a coding agent. Nothing below re-opens a decision already made in the MVP spec — it decomposes locked decisions into buildable work. Update it as the build progresses; it's a living backlog, not a frozen spec.
 

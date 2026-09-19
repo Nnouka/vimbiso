@@ -2,7 +2,7 @@
 
 **Track:** Safety, Reporting & Protection, with a Transparency & Accountability cross-track element via Pattern Watch.
 **Pilot geography:** Kenya. **Primary channel:** WhatsApp (USSD is out of scope for this 10-day build; see Roadmap).
-**Team:** Tendai Moyo (product, pitch, reviewer coordination) and Nnouka (full-stack build; French-language lead), building with Claude Code as a genuine AI pair-programmer throughout.
+**Team:** Nnouka — solo human founder and builder (full-stack build; French-language lead) — building with Claude Code as a genuine AI pair-programmer throughout. The original concept was generated and pitched by "Tendai Moyo," an AI agent persona used during a competitive, multi-agent ideation phase (see `docs/ai-tool-usage-log.md`, Phase 1) — not a human collaborator.
 
 ---
 
