@@ -51,6 +51,46 @@
           <% }); %>
         </ul>
       <% } %>
+
+      <!--
+        DASH-5: reply-in-channel. Lets a counsellor continue messaging the
+        survivor on the same WhatsApp thread, constrained by WhatsApp's
+        24-hour session window (see server.ts's computeReplyEligibility()).
+      -->
+      <h2>Conversation</h2>
+
+      <% if (typeof replyFlash !== 'undefined' && replyFlash) { %>
+        <div class="reply-flash reply-flash--<%= replyFlash.kind %>" role="status">
+          <%= replyFlash.text %>
+        </div>
+      <% } %>
+
+      <% if (!report.counsellorMessages || report.counsellorMessages.length === 0) { %>
+        <p class="page-subtitle">No counsellor follow-up messages sent for this report yet.</p>
+      <% } else { %>
+        <ul class="counsellor-message-list">
+          <% report.counsellorMessages.forEach(function (m) { %>
+            <li class="counsellor-message counsellor-message--<%= m.status || 'sent' %>">
+              <span class="counsellor-message__meta">
+                <%= m.senderName %> · <%= m.sentAtDisplay %><% if (m.status && m.status !== 'sent') { %> · <%= m.status %><% } %>
+              </span>
+              <p class="counsellor-message__body"><%= m.body %></p>
+            </li>
+          <% }); %>
+        </ul>
+      <% } %>
+
+      <% if (report.canReply) { %>
+        <form class="reply-form" method="POST" action="/dashboard/reports/<%= report.id %>/reply">
+          <label for="reply-body">Send a follow-up message on WhatsApp</label>
+          <textarea id="reply-body" name="body" rows="3" maxlength="4096" required placeholder="Type a message to send on the same WhatsApp thread..."></textarea>
+          <button type="submit">Send</button>
+        </form>
+      <% } else { %>
+        <p class="reply-unavailable">
+          <strong>Reply unavailable.</strong> <%= report.replyUnavailableReason %>
+        </p>
+      <% } %>
     </div>
   <% } %>
 

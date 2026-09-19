@@ -15,6 +15,7 @@ import session from 'express-session';
 import path from 'path';
 
 import { query } from './lib/db';
+import { sendWhatsappText } from './lib/whatsapp';
 
 // --- Types -------------------------------------------------------------
 
@@ -110,6 +111,22 @@ interface SmsAlertView {
   status: string | null;
 }
 
+interface CounsellorMessageRow {
+  id: number;
+  body: string;
+  sent_at: Date;
+  status: string | null;
+  sender_name: string | null;
+}
+
+interface CounsellorMessageView {
+  id: number;
+  body: string;
+  sentAtDisplay: string;
+  status: string | null;
+  senderName: string;
+}
+
 interface ReportRow {
   id: number;
   created_at: Date;
@@ -126,6 +143,10 @@ interface ReportDetail {
   maskedPhone: string;
   answers: TriageAnswerView[];
   smsAlerts: SmsAlertView[];
+  // DASH-5 (counsellor reply-in-channel)
+  counsellorMessages: CounsellorMessageView[];
+  canReply: boolean;
+  replyUnavailableReason: string | null;
 }
 
 // --- Constants -----------------------------------------------------------
@@ -402,66 +423,212 @@ app.post(
 );
 
 // --- Report detail view (DASH-4) -------------------------------------------
+//
+// DASH-5 additions: reply-in-channel status (canReply / replyUnavailableReason)
+// and the counsellor_messages transcript, computed alongside the existing
+// DASH-4 data below rather than as a second route, since the report detail
+// page is the one place a counsellor sees both.
+
+// WhatsApp free-form replies are only deliverable inside the 24-hour session
+// window that starts from the survivor's last INBOUND message (per Meta/
+// Twilio's WhatsApp Business policy — see docs/backlog.md's DASH-5 technical
+// notes). Outside that window Twilio rejects the send (error 63016) unless
+// it's a pre-approved template, which this story does not build (see DASH-5).
+const REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+// message_log (012 migration) is Networking-owned and pseudonymizes the
+// sender, but it does carry report_id, so this is a plain, read-only query
+// against a table this package doesn't own — the same "two processes, one
+// database" pattern dashboard/lib/db.ts's header describes for every other
+// table here (reports, triage_answers, sms_alerts, ...). No pseudonym/
+// decryption key is needed since only the timestamp is read.
+async function getLastInboundAt(reportId: string): Promise<Date | null> {
+  const result = await query<{ last_inbound_at: Date | null }>(
+    `SELECT MAX(occurred_at) AS last_inbound_at
+     FROM message_log
+     WHERE report_id = $1 AND direction = 'inbound'`,
+    [reportId]
+  );
+  return result.rows[0]?.last_inbound_at ?? null;
+}
+
+function computeReplyEligibility(lastInboundAt: Date | null): {
+  canReply: boolean;
+  replyUnavailableReason: string | null;
+} {
+  if (!lastInboundAt) {
+    return {
+      canReply: false,
+      replyUnavailableReason:
+        "No inbound message from this survivor has been logged yet, so there's no open WhatsApp session to reply on.",
+    };
+  }
+  const ageMs = Date.now() - new Date(lastInboundAt).getTime();
+  if (ageMs > REPLY_WINDOW_MS) {
+    return {
+      canReply: false,
+      replyUnavailableReason:
+        "This survivor's 24-hour WhatsApp session has closed (their last message was over 24 hours ago), so a free-form reply can't be delivered. Use the resource directory / hotline handoff instead, or wait for them to message again.",
+    };
+  }
+  return { canReply: true, replyUnavailableReason: null };
+}
+
+async function loadReportDetail(reportId: string): Promise<ReportDetail | null> {
+  const reportResult = await query<ReportRow>(
+    `SELECT id, created_at, risk_level, region, whatsapp_number
+     FROM reports
+     WHERE id = $1`,
+    [reportId]
+  );
+  const reportRow = reportResult.rows[0];
+  if (!reportRow) return null;
+
+  const [answersResult, smsResult, counsellorMessagesResult, lastInboundAt] = await Promise.all([
+    query<TriageAnswerRow>(
+      `SELECT question_key, answer
+       FROM triage_answers
+       WHERE report_id = $1
+       ORDER BY id ASC`,
+      [reportId]
+    ),
+    query<SmsAlertRow>(
+      `SELECT sent_to, sent_at, status
+       FROM sms_alerts
+       WHERE report_id = $1
+       ORDER BY sent_at ASC`,
+      [reportId]
+    ),
+    query<CounsellorMessageRow>(
+      `SELECT cm.id, cm.body, cm.sent_at, cm.status, cu.name AS sender_name
+       FROM counsellor_messages cm
+       LEFT JOIN counsellor_users cu ON cu.id = cm.sent_by
+       WHERE cm.report_id = $1
+       ORDER BY cm.sent_at ASC`,
+      [reportId]
+    ),
+    getLastInboundAt(reportId),
+  ]);
+
+  const { canReply, replyUnavailableReason } = computeReplyEligibility(lastInboundAt);
+
+  return {
+    id: reportRow.id,
+    createdAtDisplay: formatTimestamp(reportRow.created_at),
+    riskLevel: reportRow.risk_level,
+    region: reportRow.region,
+    maskedPhone: maskPhoneNumber(reportRow.whatsapp_number),
+    answers: answersResult.rows.map((row) => ({
+      key: row.question_key,
+      questionText: TRIAGE_QUESTION_TEXT[row.question_key] || row.question_key,
+      answer: row.answer,
+    })),
+    smsAlerts: smsResult.rows.map((row) => ({
+      sentAtDisplay: formatTimestamp(row.sent_at),
+      sentTo: row.sent_to,
+      status: row.status,
+    })),
+    counsellorMessages: counsellorMessagesResult.rows.map((row) => ({
+      id: row.id,
+      body: row.body,
+      sentAtDisplay: formatTimestamp(row.sent_at),
+      status: row.status,
+      senderName: row.sender_name || 'Unknown counsellor',
+    })),
+    canReply,
+    replyUnavailableReason,
+  };
+}
 
 app.get('/dashboard/reports/:id', async (req: Request, res: Response) => {
   const reportId = req.params.id;
   let report: ReportDetail | null = null;
 
   try {
-    const reportResult = await query<ReportRow>(
-      `SELECT id, created_at, risk_level, region, whatsapp_number
-       FROM reports
-       WHERE id = $1`,
-      [reportId]
-    );
-    const reportRow = reportResult.rows[0];
-
-    if (reportRow) {
-      const [answersResult, smsResult] = await Promise.all([
-        query<TriageAnswerRow>(
-          `SELECT question_key, answer
-           FROM triage_answers
-           WHERE report_id = $1
-           ORDER BY id ASC`,
-          [reportId]
-        ),
-        query<SmsAlertRow>(
-          `SELECT sent_to, sent_at, status
-           FROM sms_alerts
-           WHERE report_id = $1
-           ORDER BY sent_at ASC`,
-          [reportId]
-        ),
-      ]);
-
-      report = {
-        id: reportRow.id,
-        createdAtDisplay: formatTimestamp(reportRow.created_at),
-        riskLevel: reportRow.risk_level,
-        region: reportRow.region,
-        maskedPhone: maskPhoneNumber(reportRow.whatsapp_number),
-        answers: answersResult.rows.map((row) => ({
-          key: row.question_key,
-          questionText: TRIAGE_QUESTION_TEXT[row.question_key] || row.question_key,
-          answer: row.answer,
-        })),
-        smsAlerts: smsResult.rows.map((row) => ({
-          sentAtDisplay: formatTimestamp(row.sent_at),
-          sentTo: row.sent_to,
-          status: row.status,
-        })),
-      };
-    }
+    report = await loadReportDetail(reportId);
   } catch (err) {
     console.error('[dashboard] failed to load report detail:', err);
   }
+
+  // Simple query-string flash for the DASH-5 reply form — this page is a
+  // classic server-rendered GET/POST-redirect/GET, so there's no client-side
+  // state to carry a "message sent" confirmation across the redirect other
+  // than the URL itself. Never carries the message body, only a status.
+  const replyFlash = req.query.reply === 'sent'
+    ? { kind: 'success' as const, text: 'Message sent.' }
+    : req.query.reply === 'error'
+      ? { kind: 'error' as const, text: 'That message could not be sent. See the reason below and try again.' }
+      : null;
 
   res.render('report-detail', {
     title: 'Report Detail',
     activeNav: 'reports',
     reportId,
     report,
+    replyFlash,
   });
+});
+
+// --- Counsellor reply-in-channel (DASH-5) -----------------------------------
+//
+// Story: As a counsellor, I want to send a follow-up message to a survivor
+// from the dashboard on the same WhatsApp thread, so I can continue the
+// conversation without switching to a phone. See docs/backlog.md's DASH-5.
+app.post('/dashboard/reports/:id/reply', async (req: Request, res: Response) => {
+  const reportId = req.params.id;
+  const counsellor = req.session.counsellor!; // requireAuth already ran for /dashboard/*
+  const body = (req.body?.body || '').toString().trim();
+
+  const fail = () => res.redirect(`/dashboard/reports/${reportId}?reply=error`);
+
+  if (!body) {
+    return fail();
+  }
+
+  try {
+    const reportResult = await query<{ whatsapp_number: string }>(
+      `SELECT whatsapp_number FROM reports WHERE id = $1`,
+      [reportId]
+    );
+    const whatsappNumber = reportResult.rows[0]?.whatsapp_number;
+    if (!whatsappNumber) {
+      return fail();
+    }
+
+    // Re-check the 24-hour window server-side rather than trusting that the
+    // form was only rendered/submitted while canReply was true — the window
+    // can close between page load and submit, and a hidden form field is
+    // not something to trust for a real send decision.
+    const lastInboundAt = await getLastInboundAt(reportId);
+    const { canReply } = computeReplyEligibility(lastInboundAt);
+    if (!canReply) {
+      return fail();
+    }
+
+    let twilioSid: string | null = null;
+    let status = 'sent';
+    try {
+      const result = await sendWhatsappText(whatsappNumber, body);
+      twilioSid = result.sid;
+    } catch (sendErr) {
+      console.error(`[dashboard] DASH-5 send failed for report ${reportId}:`, sendErr);
+      status = 'failed';
+    }
+
+    await query(
+      `INSERT INTO counsellor_messages (report_id, sent_by, body, twilio_sid, status)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [reportId, counsellor.id, body, twilioSid, status]
+    );
+
+    if (status === 'failed') {
+      return fail();
+    }
+    res.redirect(`/dashboard/reports/${reportId}?reply=sent`);
+  } catch (err) {
+    console.error(`[dashboard] DASH-5 reply handling failed for report ${reportId}:`, err);
+    fail();
+  }
 });
 
 // --- Counsellor settings (HR-5) --------------------------------------------

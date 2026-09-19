@@ -10,7 +10,7 @@ Status: **script/storyboard only, finalized and shootable — the recorded video
 
 Voiceover over Kenya's numbers on screen (pull directly from the pitch deck's stat slide, do not re-derive):
 
-> "220 femicides in Kenya in 2025. 129 in the first three months alone. And in March 2025, the government stopped publishing the count."
+> "220 femicides in Kenya in 2025. 129 in the first three months alone. And in March 2025, the government stopped publishing the count. In Cameroon At least 50 women were killed in domestic violence incidents between January and April 2026 alone"
 
 Cut to black, then the Vimbiso wordmark.
 
@@ -64,6 +64,14 @@ Phone B receives a real Twilio SMS. On-screen, the message body should show only
 ## 6. Cut to laptop — counsellor dashboard (1:35–1:55)
 
 Show the reports queue: the new HIGH-risk report pinned in red at the top, phone number masked (`•••• 0001`, never shown in full — this masking was verified in Sprint 3 against real data, see `docs/qa-sprint3-report.md` §1.1), triage summary visible, no name anywhere.
+
+## 6a. Counsellor replies in-channel (1:55–2:00) — DASH-5
+
+From the same report detail view, open the report and show the counsellor typing a short follow-up ("Hi, this is Vimbiso — I'm here, are you safe to talk?") into the new reply box and hitting Send. Cut back to Phone A: the message arrives on the survivor's existing WhatsApp thread with the bot — same number, same conversation, no new app or channel.
+
+Narrate: "The counsellor can keep talking to the survivor right here, on the same WhatsApp thread — no need to switch to a personal phone."
+
+**Honesty note (on-screen caption):** this only works inside WhatsApp's 24-hour session window after the survivor's last message — the dashboard hides the reply box and explains why once that window closes, rather than silently failing or offering a fake send.
 
 ## 7. Cut to trusted contact's phone (1:55–2:05)
 

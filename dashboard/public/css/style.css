@@ -426,3 +426,98 @@ h1 {
   color: var(--color-muted);
   font-size: 0.9rem;
 }
+
+/* DASH-5: counsellor reply-in-channel */
+
+.reply-flash {
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.reply-flash--success {
+  background: #eaf3ee;
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+}
+
+.reply-flash--error {
+  background: var(--color-high-risk-bg);
+  border: 1px solid var(--color-high-risk-border);
+  color: var(--color-high-risk-text);
+}
+
+.counsellor-message-list {
+  list-style: none;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.counsellor-message {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+}
+
+.counsellor-message--failed {
+  border-color: var(--color-high-risk-border);
+}
+
+.counsellor-message__meta {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  margin-bottom: 0.25rem;
+}
+
+.counsellor-message__body {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.reply-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 520px;
+  margin-bottom: 1.5rem;
+}
+
+.reply-form label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.reply-form textarea {
+  font: inherit;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  resize: vertical;
+}
+
+.reply-form button {
+  align-self: flex-start;
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reply-unavailable {
+  background: var(--color-bg);
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  color: var(--color-muted);
+  max-width: 520px;
+  margin-bottom: 1.5rem;
+}
